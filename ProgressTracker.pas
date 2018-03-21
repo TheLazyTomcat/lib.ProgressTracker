@@ -9,9 +9,9 @@
 
   Progress tracker
 
-  ©František Milt 2017-09-30
+  ©František Milt 2018-03-21
 
-  Version 1.0
+  Version 1.1
 
 ===============================================================================}
 unit ProgressTracker;
@@ -31,7 +31,8 @@ interface
 ===============================================================================}
 
 type
-  TProgressEvent = procedure(Sender: TObject; Progress: Single) of object;
+  TProgressEvent    = procedure(Sender: TObject; Progress: Single) of object;
+  TProgressCallback = procedure(Sender: TObject; Progress: Single);
 
   TProgressTracker = class; // forward declaration
 
@@ -54,15 +55,18 @@ type
 
   TProgressTracker = class(TObject)
   private
-    fUpdateCounter:     Integer;
-    fConsecutiveStages: Boolean;
-    fGrowOnly:          Boolean;
-    fProgress:          Single;
-    fMaximum:           Int64;
-    fPosition:          Int64;
-    fStages:            TProgressStages;
-    fOnStageProgress:   TProgressEvent;
-    fOnTrackerProgress: TProgressEvent;
+    fUpdateCounter:       Integer;
+    fConsecutiveStages:   Boolean;
+    fGrowOnly:            Boolean;
+    fProgress:            Single;
+    fMaximum:             Int64;
+    fPosition:            Int64;
+    fStages:              TProgressStages;
+    fOnStageProgress:     TProgressEvent;
+    fOnTrackerProgress:   TProgressEvent;
+    fOnTrackerProgressCB: TProgressCallback;
+    fUserPtrData:         Pointer;
+    fUserIntData:         Integer;
     Function GetUpdating: Boolean;
     procedure SetConsecutiveStages(Value: Boolean);
     procedure SetProgress(Value: Single);
@@ -111,6 +115,8 @@ type
     Function SetStageIDPosition(StageID: Integer; NewValue: Int64): Boolean; virtual;
     property Stages[Index: Integer]: TProgressStage read GetStage; default;
     property StageObjects[Index: Integer]: TProgressTracker read GetStageObject;
+    property OnProgressCallBack: TProgressCallback read fOnTrackerProgressCB write fOnTrackerProgressCB;
+    property UserPtrData: Pointer read fUserPtrData write fUserPtrData;
   published
     property Updating: Boolean read GetUpdating;
     property ConsecutiveStages: Boolean read fConsecutiveStages write SetConsecutiveStages;
@@ -118,8 +124,10 @@ type
     property Progress: Single read fProgress write SetProgress;
     property Maximum: Int64 read fMaximum write SetMaximum;
     property Position: Int64 read fPosition write SetPosition;
-    property Count: Integer read fStages.Count;    
+    property Count: Integer read fStages.Count;
     property OnProgress: TProgressEvent read fOnTrackerProgress write fOnTrackerProgress;
+    property UserIntData: Integer read fUserIntData write fUserIntData;
+    property UserData: Integer read fUserIntData write fUserIntData;
   end;
 
 implementation
@@ -239,8 +247,13 @@ end;
 
 procedure TProgressTracker.DoTrackerProgress;
 begin
-If Assigned(fOnTrackerProgress) and (fUpdateCounter <= 0) then
-  fOnTrackerProgress(Self,fProgress);
+If fUpdateCounter <= 0 then
+  begin
+    If Assigned(fOnTrackerProgress) then
+      fOnTrackerProgress(Self,fProgress);
+    If Assigned(fOnTrackerProgressCB) then
+      fOnTrackerProgressCB(Self,fProgress);
+  end;
 end;
 
 //------------------------------------------------------------------------------
@@ -279,6 +292,9 @@ SetLength(fStages.Arr,0);
 fStages.Count := 0;
 fOnStageProgress := nil;
 fOnTrackerProgress := nil;
+fOnTrackerProgressCB := nil;
+fUserPtrData := nil;
+fUserIntData := 0;
 end;
 
 //------------------------------------------------------------------------------
@@ -288,6 +304,7 @@ begin
 // prevent calling of events from Clear method
 fOnStageProgress := nil;
 fOnTrackerProgress := nil;
+fOnTrackerProgressCB := nil;
 Clear;
 inherited;
 end;
@@ -673,7 +690,7 @@ begin
 If Find(StageID,Index) then
   begin
     fStages.Arr[Index].StageObject.Progress := NewValue;
-    Result := true;
+    Result := True;
   end
 else Result := False;
 end;
@@ -687,7 +704,7 @@ begin
 If Find(StageID,Index) then
   begin
     fStages.Arr[Index].StageObject.Maximum := NewValue;
-    Result := true;
+    Result := True;
   end
 else Result := False;
 end;
@@ -701,7 +718,7 @@ begin
 If Find(StageID,Index) then
   begin
     fStages.Arr[Index].StageObject.Position := NewValue;
-    Result := true;
+    Result := True;
   end
 else Result := False;
 end;
