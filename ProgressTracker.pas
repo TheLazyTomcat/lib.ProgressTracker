@@ -102,7 +102,8 @@ type
     procedure Move(SrcIdx, DstIdx: Integer); virtual;
     procedure Exchange(Idx1, Idx2: Integer); virtual;
     Function Extract(StageObject: TProgressTracker): TProgressTracker; virtual;
-    Function Remove(StageObject: TProgressTracker): Integer; virtual;
+    Function Remove(StageObject: TProgressTracker): Integer; overload; virtual;
+    Function Remove(StageID: Integer): Integer; overload; virtual;
     procedure Delete(Index: Integer); virtual;
     procedure Clear; virtual;
     Function Recalculate(ProgressOnly: Boolean): Single; virtual;
@@ -547,6 +548,15 @@ end;
 Function TProgressTracker.Remove(StageObject: TProgressTracker): Integer;
 begin
 Result := IndexOf(StageObject);
+If CheckIndex(Result) then
+  Delete(Result);
+end;
+
+//   ---   ---   ---   ---   ---   ---   ---   ---   ---   ---   ---   ---   ---
+
+Function TProgressTracker.Remove(StageID: Integer): Integer;
+begin
+Result := IndexOf(StageID);
 If CheckIndex(Result) then
   Delete(Result);
 end;
