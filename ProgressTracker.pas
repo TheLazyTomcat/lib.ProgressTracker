@@ -92,7 +92,7 @@ type
     procedure DoStageProgress; virtual;
     procedure DoTrackerProgress; virtual;
     procedure DoProgress; virtual;
-    procedure StageProgressHandler(Sender: TObject; {%H-}Progress: Double); virtual;
+    procedure StageProgressHandler(Sender: TObject; Progress: Double); virtual;
     procedure ReindexStages; virtual;
     procedure PrepareNewStage(var NewStage: TProgressStage); virtual;
     property StageEvent: TProgressEvent read fOnStageProgress write fOnStageProgress;
