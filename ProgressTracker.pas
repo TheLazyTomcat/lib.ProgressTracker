@@ -86,6 +86,7 @@ type
     Function GetCapacity: Integer; override;
     procedure SetCapacity(Value: Integer); override;
     Function GetCount: Integer; override;
+    procedure SetCount(Value: Integer); override;
     procedure DoStageProgress; virtual;
     procedure DoTrackerProgress; virtual;
     procedure DoProgress; virtual;
@@ -260,6 +261,13 @@ end;
 Function TProgressTracker.GetCount: Integer;
 begin
 Result := fStages.Count;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.SetCount(Value: Integer);
+begin
+// do nothing
 end;
 
 //------------------------------------------------------------------------------
