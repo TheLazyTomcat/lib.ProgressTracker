@@ -22,6 +22,7 @@ unit ProgressTracker;
 
 {$IFDEF FPC}
   {$MODE Delphi}
+  {$DEFINE FPC_DisableWarns}
 {$ENDIF}
 
 {$TYPEINFO ON}
@@ -147,6 +148,10 @@ implementation
 
 uses
   SysUtils;
+
+{$IFDEF FPC_DisableWarns}
+  {$WARN 5024 OFF} // Parameter "$1" not used
+{$ENDIF}
 
 {===============================================================================
 --------------------------------------------------------------------------------
