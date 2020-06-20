@@ -107,6 +107,7 @@ type
     procedure SetConsecutiveStages(Value: Boolean);
     procedure SetStrictlyGrowing(Value: Boolean);
     procedure SetMinProgressDelta(Value: Double);
+    procedure SetGlobalSettings(Value: Boolean);
   protected
     // list methods
     Function GetCapacity: Integer; override;
@@ -123,6 +124,8 @@ type
     // init/final
     procedure Initialize; virtual;
     procedure Finalize; virtual;
+    // macro/utils
+    procedure NewStageAt(Index: Integer; AbsoluteLength: Double; StageID: TPTStageID); virtual;
     // internal properties/events
     property AbsoluteLength: Double read fAbsoluteLength write fAbsoluteLength;
     property RelativeLength: Double read fRelativeLength write fRelativeLength;
@@ -173,12 +176,15 @@ type
     property MinProgressDelta: Double read fMinProgressDelta write SetMinProgressDelta;
   {
     When global settings is true, the newly added stages inherits settings from
-    owner node (except for GlobalSettings itself), and any change to the
-    settings is immediately projected to all existing stages.
+    owner node and any change to the settings is immediately projected to all
+    existing subnodes.
+
+    Global settings is automatically set to the same value in all subnodes when
+    changed. Newly added nodes are inheriting the value.
 
     False by default.
   }
-    property GlobalSettings: Boolean read fGlobalSettings write fGlobalSettings;
+    property GlobalSettings: Boolean read fGlobalSettings write SetGlobalSettings;
     // events
     property OnProgress: TFloatEvent read fOnProgressEvent write fOnProgressEvent;
     property OnProgressEvent: TFloatEvent read fOnProgressEvent write fOnProgressEvent;
@@ -319,7 +325,14 @@ If fGlobalSettings then
   For i := LowIndex to HighIndex do
     fStages[i].StrictlyGrowing := Value;
 If Value <> fStrictlyGrowing then
-  fStrictlyGrowing := Value;
+  begin
+    fStrictlyGrowing := Value;
+    If not IsSimpleStage then
+      begin
+        RecalculateProgress;
+        DoProgress;
+      end;
+  end;
 end;
 
 //------------------------------------------------------------------------------
@@ -333,6 +346,27 @@ If fGlobalSettings then
     fStages[i].MinProgressDelta := Value;
 If Value <> fMinProgressDelta then
   fMinProgressDelta := LimitValue(Value);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressNode.SetGlobalSettings(Value: Boolean);
+var
+  i:  Integer;
+begin
+For i := LowIndex to HighIndex do
+  fStages[i].GlobalSettings := Value;
+If Value <> fGlobalSettings then
+  begin
+    fGlobalSettings := Value;
+    If fGlobalSettings then
+      For i := LowIndex to HighIndex do
+        begin
+          fStages[i].ConsecutiveStages := fConsecutiveStages;
+          fStages[i].StrictlyGrowing := fStrictlyGrowing;
+          fStages[i].MinProgressDelta := fMinProgressDelta;
+        end;
+  end;
 end;
 
 {-------------------------------------------------------------------------------
@@ -519,6 +553,26 @@ fOnStageProgressCallBack := nil;
 Clear;
 end;
 
+//------------------------------------------------------------------------------
+
+procedure TProgressNode.NewStageAt(Index: Integer; AbsoluteLength: Double; StageID: TPTStageID);
+begin
+// do not check index validity
+fStages[Index] := TProgressNode.CreateAsStage(AbsoluteLength,StageID);
+fStages[Index].OnProgressInternal := StageProgressHandler;
+If fGlobalSettings then
+  begin
+    fStages[Index].StrictlyGrowing := fStrictlyGrowing;
+    fStages[Index].ConsecutiveStages := fConsecutiveStages;
+    fStages[Index].MinProgressDelta := fMinProgressDelta;
+    fStages[Index].GlobalSettings := fGlobalSettings;
+  end;
+Inc(fStageCount);
+RecalculateRelations;
+RecalculateProgress(True);
+DoProgress;
+end;
+
 {-------------------------------------------------------------------------------
     TProgressNode - public methods
 -------------------------------------------------------------------------------}
@@ -663,20 +717,7 @@ Function TProgressNode.Add(AbsoluteLength: Double; StageID: TPTStageID = PT_STAG
 begin
 Grow;
 Result := fStageCount;
-fStages[Result] := TProgressNode.CreateAsStage(AbsoluteLength,StageID);
-fStages[Result].OnProgressInternal := StageProgressHandler;
-If fGlobalSettings then
-  begin
-    fStages[Result].StrictlyGrowing := fStrictlyGrowing;
-    fStages[Result].ConsecutiveStages := fConsecutiveStages;
-    fStages[Result].MinProgressDelta := fMinProgressDelta;
-  end;
-Inc(fStageCount);
-RecalculateRelations;
-fMaximum := 0;
-fPosition := 0;
-RecalculateProgress(True);
-DoProgress;
+NewStageAt(Result,AbsoluteLength,StageID);
 end;
 
 //------------------------------------------------------------------------------
@@ -690,18 +731,7 @@ If CheckIndex(Index) then
     Grow;
     For i := HighIndex downto Index do
       fStages[i + 1] := fStages[i];
-    fStages[Index] := TProgressNode.CreateAsStage(AbsoluteLength,StageID);
-    fStages[Index].OnProgressInternal := StageProgressHandler;
-    If fGlobalSettings then
-      begin
-        fStages[Index].StrictlyGrowing := fStrictlyGrowing;
-        fStages[Index].ConsecutiveStages := fConsecutiveStages;
-        fStages[Index].MinProgressDelta := fMinProgressDelta;
-      end;
-    Inc(fStageCount);
-    RecalculateRelations;
-    RecalculateProgress(True);
-    DoProgress;
+    NewStageAt(Index,AbsoluteLength,StageID);
   end
 else Add(AbsoluteLength,StageID);
 end;
