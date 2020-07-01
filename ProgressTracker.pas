@@ -29,8 +29,8 @@ unit ProgressTracker;
 interface
 
 uses
-  SysUtils,
-  {$IFNDEF FPC}AuxTypes,{$ENDIF} AuxClasses;
+  SysUtils, Classes,
+  AuxTypes, AuxClasses;
 
 {===============================================================================
     Library-specific exeptions
@@ -40,11 +40,10 @@ type
   EPTException = class(Exception);
 
   EPTIndexOutOfBounds  = class(EPTException);
+  EPTInvalidValue      = class(EPTException);
   EPTInvalidStageID    = class(EPTException);
-  EPTStageIDAssigned   = class(EPTException);
+  EPTAssignedStageID   = class(EPTException);
   EPTUnassignedStageID = class(EPTException);
-  //EPTNoSubstage       = class(EPTException);
-  EPTInvalidValue     = class(EPTException);
 
 {===============================================================================
 --------------------------------------------------------------------------------
@@ -79,39 +78,39 @@ type
   TProgressStageNode = class(TCustomListObject)
   private
     // progress
-    fMaximum:                 UInt64;
-    fPosition:                UInt64;
-    fProgress:                Double;
-    fLastReportedProgress:    Double;
+    fMaximum:                     UInt64;
+    fPosition:                    UInt64;
+    fProgress:                    Double;
+    fLastReportedProgress:        Double;
     // stage (public)
-    fSuperStageNode:          TProgressStageNode;
-    fStageID:                 TPTStageID;
-    fStageCount:              Integer;
-    fStages:                  array of TProgressStageNode;
+    fSuperStageNode:              TProgressStageNode;
+    fID:                          TPTStageID;
+    fSubStageCount:               Integer;
+    fSubStages:                   array of TProgressStageNode;
     // stage (internal)
-    fAbsoluteLength:          Double;
-    fRelativeLength:          Double;
-    fRelativeStart:           Double;
-    fRelativeProgress:        Double;
+    fAbsoluteLength:              Double;
+    fRelativeLength:              Double;
+    fRelativeStart:               Double;
+    fRelativeProgress:            Double;
     // settings
-    fConsecutiveStages:       Boolean;
-    fStrictlyGrowing:         Boolean;
-    fMinProgressDelta:        Double;
-    fGlobalSettings:          Boolean;
+    fConsecutiveStages:           Boolean;
+    fStrictlyGrowing:             Boolean;
+    fMinProgressDelta:            Double;
+    fGlobalSettings:              Boolean;
     // updates
-    fChanged:                 Boolean;
-    fUpdateCounter:           Integer;
+    fChanged:                     Boolean;
+    fUpdateCounter:               Integer;
     // events
-    fOnProgressInternal:      TNotifyEvent;
-    fOnProgressEvent:         TFloatEvent;
-    fOnProgressCallBack:      TFloatCallback;
-    fOnStageProgressEvent:    TPTStageProgressEvent;
-    fOnStageProgressCallBack: TPTStageProgressCallback;
+    fOnProgressInternal:          TNotifyEvent;
+    fOnProgressEvent:             TFloatEvent;
+    fOnProgressCallBack:          TFloatCallback;
+    fOnSubStageProgressEvent:     TPTStageProgressEvent;
+    fOnSubStageProgressCallBack:  TPTStageProgressCallback;
     // getters, setters
     procedure SetMaximum(Value: UInt64);
     procedure SetPosition(Value: UInt64);
     procedure SetProgress(Value: Double);
-    Function GetStage(Index: Integer): TProgressStageNode;
+    Function GetSubStage(Index: Integer): TProgressStageNode;
     procedure SetConsecutiveStages(Value: Boolean);
     procedure SetStrictlyGrowing(Value: Boolean);
     procedure SetMinProgressDelta(Value: Double);
@@ -126,14 +125,14 @@ type
     procedure RecalculateRelations; virtual;
     procedure RecalculateProgress(ForceChange: Boolean = False); virtual;
     procedure ProgressFromPosition; virtual;
-    procedure StageProgressHandler(Sender: TObject); virtual;
+    procedure SubStageProgressHandler(Sender: TObject); virtual;
     // progress
     procedure DoProgress; virtual;  // also manages internal progress events
     // init/final
     procedure Initialize; virtual;
     procedure Finalize; virtual;
     // macro/utils
-    procedure NewStageAt(Index: Integer; AbsoluteLength: Double; StageID: TPTStageID); virtual;
+    procedure NewSubStageAt(Index: Integer; AbsoluteLength: Double; ID: TPTStageID); virtual;
     // internal properties/events
     property AbsoluteLength: Double read fAbsoluteLength write fAbsoluteLength;
     property RelativeLength: Double read fRelativeLength write fRelativeLength;
@@ -142,7 +141,7 @@ type
     property OnProgressInternal: TNotifyEvent read fOnProgressInternal write fOnProgressInternal;
   public
     constructor Create;
-    constructor CreateAsStage(SuperStageNode: TProgressStageNode; AbsoluteLength: Double; StageID: TPTStageID);
+    constructor CreateAsStage(SuperStageNode: TProgressStageNode; AbsoluteLength: Double; ID: TPTStageID);
     destructor Destroy; override;
     // updating
     Function BeginUpdate: Integer; virtual;
@@ -153,40 +152,42 @@ type
     Function First: TProgressStageNode; virtual;
     Function Last: TProgressStageNode; virtual;
     Function IndexOf(Node: TProgressStageNode): Integer; overload; virtual;
-    Function IndexOf(StageID: TPTStageID): Integer; overload; virtual;
+    Function IndexOf(SubStage: TPTStageID): Integer; overload; virtual;
     Function Find(Node: TProgressStageNode; out Index: Integer): Boolean; overload; virtual;
-    Function Find(StageID: TPTStageID; out Index: Integer): Boolean; overload; virtual;
-    Function Add(AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): Integer; virtual;
-    Function Insert(Index: Integer; AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): Integer; virtual;
+    Function Find(SubStage: TPTStageID; out Index: Integer): Boolean; overload; virtual;
+    Function Add(AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): Integer; virtual;
+    procedure Insert(Index: Integer; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID); virtual;
     procedure Move(SrcIdx, DstIdx: Integer); virtual;
     procedure Exchange(Idx1, Idx2: Integer); virtual;
     Function Extract(Node: TProgressStageNode): TProgressStageNode; overload; virtual;
-    Function Extract(StageID: TPTStageID): TProgressStageNode; overload; virtual;
+    Function Extract(SubStage: TPTStageID): TProgressStageNode; overload; virtual;
     Function Remove(Node: TProgressStageNode): Integer; overload; virtual;
-    Function Remove(StageID: TPTStageID): Integer; overload; virtual;
+    Function Remove(SubStage: TPTStageID): Integer; overload; virtual;
     procedure Delete(Index: Integer); virtual;
     procedure Clear; virtual;
     // indirect stages access
-    Function SetStageMaximum(StageID: TPTStageID; NewValue: UInt64): Boolean; virtual;
-    Function SetStagePosition(StageID: TPTStageID; NewValue: UInt64): Boolean; virtual;
-    Function SetStageProgress(StageID: TPTStageID; NewValue: Double): Boolean; virtual;
+    Function SetSubStageMaximum(SubStage: TPTStageID; NewValue: UInt64): Boolean; virtual;
+    Function SetSubStagePosition(SubStage: TPTStageID; NewValue: UInt64): Boolean; virtual;
+    Function SetSubStageProgress(SubStage: TPTStageID; NewValue: Double): Boolean; virtual;
     // utility function
     Function IsSimpleStage: Boolean; virtual;
     Function StageData: TPTStageData; virtual;
+    Function SubStageLevel: Integer; virtual;
+    Function TotalSubStageCount: Integer; virtual;
     // properties
     property Maximum: UInt64 read fMaximum write SetMaximum;
     property Position: UInt64 read fPosition write SetPosition;
     property Progress: Double read fProgress write SetProgress;
     property SuperStageNode: TProgressStageNode read fSuperStageNode;
-    property StageID: TPTStageID read fStageID write fStageID;
-    property Stages[Index: Integer]: TProgressStageNode read GetStage; default;
+    property ID: TPTStageID read fID write fID;
+    property SubStages[Index: Integer]: TProgressStageNode read GetSubStage; default;
     property ConsecutiveStages: Boolean read fConsecutiveStages write SetConsecutiveStages;
     property StrictlyGrowing: Boolean read fStrictlyGrowing write SetStrictlyGrowing;
     property MinProgressDelta: Double read fMinProgressDelta write SetMinProgressDelta;
   {
-    When global settings is true, the newly added stage node inherits settings
-    from owner node and any change to the settings is immediately projected to
-    all existing subnodes.
+    When global settings is true, the newly added substage node inherits
+    settings from owner node and any change to the settings is immediately
+    projected to all existing subnodes.
 
     Global settings is automatically set to the same value in all subnodes when
     changed. Newly added nodes are inheriting the current value.
@@ -198,9 +199,9 @@ type
     property OnProgress: TFloatEvent read fOnProgressEvent write fOnProgressEvent;
     property OnProgressEvent: TFloatEvent read fOnProgressEvent write fOnProgressEvent;
     property OnProgressCallBack: TFloatCallback read fOnProgressCallBack write fOnProgressCallBack;
-    property OnStageProgress: TPTStageProgressEvent read fOnStageProgressEvent write fOnStageProgressEvent;
-    property OnStageProgressEvent: TPTStageProgressEvent read fOnStageProgressEvent write fOnStageProgressEvent;
-    property OnStageProgressCallBack: TPTStageProgressCallback read fOnStageProgressCallBack write fOnStageProgressCallBack;
+    property OnSubStageProgress: TPTStageProgressEvent read fOnSubStageProgressEvent write fOnSubStageProgressEvent;
+    property OnSubStageProgressEvent: TPTStageProgressEvent read fOnSubStageProgressEvent write fOnSubStageProgressEvent;
+    property OnSubStageProgressCallBack: TPTStageProgressCallback read fOnSubStageProgressCallBack write fOnSubStageProgressCallBack;
   end;
 
 {===============================================================================
@@ -208,6 +209,22 @@ type
                                 TProgressTracker
 --------------------------------------------------------------------------------
 ===============================================================================}
+type
+  TPTTreeSettings = record
+    FullPaths:      Boolean;
+    IncludeMaster:  Boolean;
+    PathDelimiter:  String;
+    Indentation:    String;
+  end;
+
+const
+  PT_TREESETTINGS_DEFAULT: TPTTreeSettings = (
+    FullPaths:      False;
+    IncludeMaster:  False;
+    PathDelimiter:  '.';
+    Indentation:    '  '
+  );
+
 {===============================================================================
     TProgressTracker - class declaration
 ===============================================================================}
@@ -223,6 +240,7 @@ type
     fOnStageProgressEvent:    TPTStageProgressEvent;
     fOnStageProgressCallBack: TPTStageProgressCallback;
     // getters, setters
+    Function GetProgress: Double;
     Function GetConsecutiveStages: Boolean;
     procedure SetConsecutiveStages(Value: Boolean);
     Function GetStrictlyGrowing: Boolean;
@@ -232,9 +250,12 @@ type
     Function GetGlobalSettings: Boolean;
     procedure SetGlobalSettings(Value: Boolean);
     Function GetNode(Index: Integer): TProgressStageNode;
-    Function GetStageNode(StageID: TPTStageID): TProgressStageNode;
-    Function GetStage(StageID: TPTStageID): Double;
-    procedure SetStage(StageID: TPTStageID; Value: Double);
+    Function GetStageNode(Stage: TPTStageID): TProgressStageNode;
+    Function GetStage(Stage: TPTStageID): Double;
+    procedure SetStage(Stage: TPTStageID; Value: Double);
+    Function GetSubStageCount(Stage: TPTStageID): Integer;
+    Function GetSubStageNode(Stage: TPTStageID; Index: Integer): TProgressStageNode;
+    Function GetSubStage(Stage: TPTStageID; Index: Integer): TPTStageID;
   protected
     // list methods
     Function GetCapacity: Integer; override;
@@ -249,105 +270,265 @@ type
     procedure Finalize; virtual;
     // intenal list methods
     Function InternalFirstUnassignedStageID: TPTStageID; virtual; // also grows the list if necessary
-    Function ResolveStageID(StageID: TPTStageID): TPTStageID; virtual;
-    Function InternalAdd(SuperStageNode: TProgressStageNode; AbsoluteLength: Double; StageID: TPTStageID): TPTStageID; virtual;
-    Function InternalInsert(SuperStageNode: TProgressStageNode; Index: Integer; AbsoluteLength: Double; StageID: TPTStageID): TPTStageID; virtual;
+    Function ResolveNewStageID(StageID: TPTStageID): TPTStageID; virtual;
+    Function InternalAdd(SuperStageNode: TProgressStageNode; AbsoluteLength: Double; ID: TPTStageID): TPTStageID; virtual;
+    Function InternalInsert(SuperStageNode: TProgressStageNode; Index: Integer; AbsoluteLength: Double; ID: TPTStageID): TPTStageID; virtual;
+    procedure InternalDelete(SuperStageNode: TProgressStageNode; Index: Integer); virtual;
     // utility methods
-    Function ObtainStageNode(StageID: TPTStageID): TProgressStageNode; virtual;
+    Function ObtainStageNode(Stage: TPTStageID; AllowMaster: Boolean): TProgressStageNode; virtual;
   public
     constructor Create;
     destructor Destroy; override;
     // updates
     procedure BeginUpdate; virtual;
     procedure EndUpdate; virtual;
-    // list methods
+    // index and ID methods
+  {
+    LowIndex/HighIndex returns low/high bound of indices used when accessing
+    Nodes property.
+  }
     Function LowIndex: Integer; override;
     Function HighIndex: Integer; override;
+  {
+    LowStageID returns lowest stage ID from allocated range. It is always 0.
+
+    HighStageID returns highest stage ID from allocated range, irrespective of
+    whether the id has a node assigned or not.
+    When no range is allocated, it will return PT_STAGEID_INVALID.
+  }
     Function LowStageID: TPTStageID; virtual;
     Function HighStageID: TPTStageID; virtual;
-    // index methods
+  {
+    LowSubStageIndex/HighSubStageIndex returns lowest/highest allowed index of
+    substages list for selected stage.
+
+    The function will raise an EPTInvalidStageID exception when selected stage
+    ID is completely outside of allocated range, or EPTUnassignedStageID
+    exception when selected stage ID is within range but does not have a node
+    assigned.
+  }
+    Function LowSubStageIndex(Stage: TPTStageID): Integer; virtual;
+    Function HighSubStageIndex(Stage: TPTStageID): Integer; virtual;
+  {
+    CheckStageID returns true when selected stage ID is within allocated range,
+    false otherwise. It ignores whether the ID has assigned node or not.
+
+    Parameter AllowMaster indicates whether the function should return true
+    on stage ID equal to PT_STAGEID_MASTER.
+  }
     Function CheckStageID(StageID: TPTStageID; AllowMaster: Boolean = False): Boolean; virtual;
+  {
+    StageIDAssigned returns true when selected stage ID is within allocated
+    range and a node object is assigned to it, false otherwise.
+
+    Can accept PR_STAGEID_MASTER, in which case it will always return true.
+  }
     Function StageIDAssigned(StageID: TPTStageID): Boolean; virtual;
+  {
+    CheckSubStageIndex returns true when given index is within allowed bounds
+    for substage indices in selected stage, false otherwise.
+
+    Stage parameter can be set to PT_STAGEID_MASTER to check index of root
+    stages.
+
+    When stage node cannot be obtained, it will raise EPTInvalidStageID or
+    EPTUnassignedStageID exception.
+  }
+    Function CheckSubStageIndex(Stage: TPTStageID; Index: Integer): Boolean; virtual;
+  {
+    CheckSubStageID returns true when selected stage contains a subnode with
+    ID given in SubStageID, false otherwise.
+
+    Stage parameter can be set to PT_STAGEID_MASTER to check ID of root stages.
+
+    When stage node cannot be obtained, it will raise EPTInvalidStageID or
+    EPTUnassignedStageID exception.
+  }
+    Function CheckSubStageID(Stage,SubStageID: TPTStageID): Boolean; virtual;
+  {
+    NodeIndexFromStageID returns index of node (position in Nodes property)
+    assigned to a given stage ID.
+
+    If no node is assigned at this ID, a negative value is returned.
+  }
     Function NodeIndexFromStageID(StageID: TPTStageID): Integer; virtual;
+  {
+    StageIDFromNodeIndex returns stage ID of a node at given index (see Nodes
+    property).
+
+    If the index does not point to any node, it will return PT_STAGEID_INVALID.
+  }
     Function StageIDFromNodeIndex(Index: Integer): TPTStageID; virtual;
+  {
+    FirstUnassignedStageID returns first ID that does not have a node assigned.
+    
+    When no such ID can be found, it will return PT_STAGEID_INVALID.
+  }
     Function FirstUnassignedStageID: TPTStageID; virtual;
     // list manipulation methods  
   {
     IndexOf returns index of stage with given ID within its superstage.
-
     First overload also returns the ID of superstage for which the searched
     stage is a substage. This can be PT_STAGEID_MASTER, indicating the stage
-    does not have explicit superstage.
+    is a root stage.
 
-    To get node index of given stage, use NodeIndexFromStageID.
+    IndexOfIn returns index of selected stage within a given superstage.
+    If the stage is not a substage of selected superstage, it will return
+    negative value.
+    When the SuperStage does not point to a valid stage, the function will
+    raise EPTInvalidStageID or EPTUnassignedStageID exception.
+    SuperStage can be set to PT_STAGEID_MASTER to get index of root stage.
   }
-    Function IndexOf(StageID: TPTStageID; out SuperStage: TPTStageID): Integer; overload; virtual;
-    Function IndexOf(StageID: TPTStageID): Integer; overload; virtual;
+    Function IndexOf(Stage: TPTStageID; out SuperStage: TPTStageID): Integer; overload; virtual;
+    Function IndexOf(Stage: TPTStageID): Integer; overload; virtual;
+    Function IndexOfIn(SuperStage,Stage: TPTStageID): Integer; virtual;
   {
     Method Add adds new root stage, method AddIn adds new stage as a substage
     of a selected superstage.
 
-    If SuperStageID is not valid, an EPTUnassignedStageID exception will be
-    raised.
-    When SuperStageID is set to PT_STAGEID_MASTER, the AddIn method is
-    equivalent to method Add (although not the same).
+    If SuperStage is not valid, an EPTInvalidStageID or EPTUnassignedStageID
+    (depending whether the ID is completely out of bounds, or it just points to
+    an unassigned ID) exception will be raised.
+    When SuperStage is set to PT_STAGEID_MASTER, the AddIn method is equivalent
+    to method Add.
 
-    If StageID parameter is not specified (left as invalid), then the newly
-    added stage will be assigned a first free stage ID and this ID will also be
+    If Stage parameter is not specified (left as invalid), then the newly added
+    stage will be assigned a first free stage ID and this ID will also be
     returned.
-    When a StageID is specified, and it cannot be used (ie. it is already
-    assigned), an EPTStageIDAssigned exception will be raised.
-    If specified StageID is beyond allocated space, the space is reallocated so
-    that the requested ID can be used. 
+    When a Stage is specified, and it cannot be used (ie. it is already
+    assigned), an EPTAssignedStageID exception will be raised.
+    If specified Stage is beyond allocated space, the space is reallocated so
+    that the requested ID can be used - be careful when using this feature!
   }
-    Function Add(AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
-    Function AddIn(SuperStageID: TPTStageID; AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
+    Function Add(AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
+    Function AddIn(SuperStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
+  {
+    Insert
 
-    Function Insert(InsertStageID: TPTStageID; AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
-    Function InsertIn(SuperStageID, InsertStageID: TPTStageID; AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
-    Function InsertIndex(Index: Integer; AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
-    Function InsertIndexIn(SuperStageID: TPTStageID; Index: Integer; AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
+      Inserts new stage to a root stages at position occupied by a stage
+      selected by InserStage parameter.
+      If the InsertStage does not exists, the new stage is simply added at the
+      end.
 
-    //procedure Exchange(ID1,ID2: TPTStageID); overload; virtual;
-    //procedure ExchangeIn(SuperStageID: TPTStageID; ID1,ID2: TPTStageID); overload; virtual;
+    InsertIn
+
+      Inserts new substage to a selected superstage at position occupied by
+      a stage selected by InsertStage parameter.
+      If the InsertStage does not exists, the new stage is simply added.
+
+    InsertIndex
+
+      Inserts new stage to a root stages at position given by Index parameter.
+      If the index is not valid, then the new stage is only added at the end.
+
+    InsertIndexIn
+
+      Inserts new substage to a selected superstage at position given by Index
+      parameter.
+      If the index is not valid, then the new stage is only added at the end.
+  }
+    //Function Insert(InsertStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
+    //Function InsertIn(SuperStage, InsertStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
+    //Function InsertIndex(Index: Integer; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
+    //Function InsertIndexIn(SuperStage: TPTStageID; Index: Integer; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
+
+    //procedure Exchange(Stage1,Stage2: TPTStageID); overload; virtual;
+    //procedure ExchangeIn(SuperStage: TPTStageID; Stage1,Stage2: TPTStageID); overload; virtual;
     //procedure ExchangeIndex(Idx1,Idx2: Integer); overload; virtual;
-    //procedure ExchangeIndexIn(SuperStageID: TPTStageID; Idx1,Idx2: Integer); overload; virtual;
+    //procedure ExchangeIndexIn(SuperStage: TPTStageID; Idx1,Idx2: Integer); overload; virtual;
 
-    //procedure Move(SrcID,DstID: TPTStageID); overload; virtual;
-    //procedure MoveIn(SuperStageID: TPTStageID; SrcID,DstID: TPTStageID); overload; virtual;
+    //procedure Move(SrcStage,DstStage: TPTStageID); overload; virtual;
+    //procedure MoveIn(SuperStage: TPTStageID; SrcStage,DstStage: TPTStageID); overload; virtual;
     //procedure MoveIndex(SrcIdx,DstIdx: Integer); overload; virtual;
-    //procedure MoveIndexIn(SuperStageID: TPTStageID; SrcIdx,DstIdx: Integer); overload; virtual;
+    //procedure MoveIndexIn(SuperStage: TPTStageID; SrcIdx,DstIdx: Integer); overload; virtual;
 
-    Function Remove(StageID: TPTStageID): TPTStageID; virtual;
-    procedure Delete(StageID: TPTStageID); virtual;
+  {
+    Removes selected stage, if present, and returns its index in appropriate
+    superstage and, in case of first overload, outputs ID of this superstage
+    (can be PT_STAGEID_MASTER).
+    If the stage is not present, the function will return a negative value and
+    value of SuperStage will be undefined.
+
+    RemoveIn removes selected stage, if present, from a given superstage.
+    The superstage must be valid, otherwise an EPTInvalidStageID or
+    EPTUnassignedStageID exception will be raise.
+    If the selected stage is not present in the given superstage, a negative
+    value will be returned.
+  }
+    Function Remove(Stage: TPTStageID; out SuperStage: TPTStageID): Integer; overload; virtual;
+    Function Remove(Stage: TPTStageID): Integer; overload; virtual;
+    Function RemoveIn(SuperStage,Stage: TPTStageID): Integer; virtual;
+  {
+    Delete
+
+      Deletes selected root stage.
+      If the selected stage is not a substage of master stage (ie. it is not a
+      root stage), an EPTInvalidStageID exception will be raised.
+
+    DeleteIn
+
+      Deletes selected stage from a selected superstage.
+      If the superstage does not exists, this method will return an
+      EPTInvalidStageID or EPTUnassignedStageID exception.
+      If the selected stage is not a substage of selected superstage, an
+      EPTInvalidStageID exception will be raised.
+
+    DeleteIndex
+
+      Deletes stage at a position given by index from a master stage.
+      If the index does not point to a valid substage, it will raise an
+      EPTIndexOutOfBounds exception.
+
+    DeleteIndexIn
+
+      Deletes stage at a position given by index from a selected superstage.
+      If the superstage does not exists, this method will return an
+      EPTInvalidStageID or EPTUnassignedStageID exception.
+      If the index does not point to a valid substage, it will raise an
+      EPTIndexOutOfBounds exception.
+  }
+    procedure Delete(Stage: TPTStageID); virtual;
+    procedure DeleteIn(SuperStage: TPTStageID; Stage: TPTStageID); virtual;
     procedure DeleteIndex(Index: Integer); virtual;
-    
-    procedure Clear(SuperStageID: TPTStageID = PT_STAGEID_INVALID); virtual;
+    procedure DeleteIndexIn(SuperStage: TPTStageID; Index: Integer); virtual;
+  {
+    If the parameter SuperStage points to a valid stage node, then only
+    substages of this stage will be removed, otherwise all known stages will
+    be removed.
+    If the selected stage does not contain any substage, then nothing will
+    happen.
+  }
+    procedure Clear(Stage: TPTStageID = PT_STAGEID_INVALID); virtual;
     // stages information
-    Function IsSimpleStage(StageID: TPTStageID): Boolean; virtual;
-    Function IsSubstageOf(SubStageID,StageID: TPTStageID): Boolean; virtual;
-    Function IsSuperstageOf(SuperStageID,StageID: TPTStageID): Boolean; virtual;
-    Function SeperstageOf(StageID: TPTStageID): TPTStageID; virtual;
-    Function SubstageCountOf(StageID: TPTStageID): Integer; virtual;
-    Function SubstagesOf(StageID: TPTStageID): TPTStageArray; virtual;
-    Function StagePath(StageID: TPTStageID; IncludeMaster: Boolean = False): TPTStageArray; virtual;
+    Function IsSimpleStage(Stage: TPTStageID): Boolean; virtual;
+    Function IsSubStageOf(SubStage,Stage: TPTStageID): Boolean; virtual;
+    Function IsSuperStageOf(SuperStage,Stage: TPTStageID): Boolean; virtual;
+    Function SuperStageOf(Stage: TPTStageID): TPTStageID; virtual;
+    Function StagePath(Stage: TPTStageID; IncludeMaster: Boolean = False): TPTStageArray; virtual;
+    //procedure StageTree(Tree: TStrings; TreeSettings: TPTTreeSettings); overload; virtual;
+    //procedure StageTree(Tree: TStrings); overload; virtual;
     // managed stages access
-    Function GetStageMaximum(StageID: TPTStageID): UInt64; virtual;
-    Function SetStageMaximum(StageID: TPTStageID; Maximum: UInt64): UInt64; virtual;
-    Function GetStagePosition(StageID: TPTStageID): UInt64; virtual;
-    Function SetStagePosition(StageID: TPTStageID; Position: UInt64): UInt64; virtual;
-    Function GetStageProgress(StageID: TPTStageID): Double; virtual;
-    Function SetStageProgress(StageID: TPTStageID; Progress: Double): Double; virtual;
-    Function GetStageReporting(StageID: TPTStageID): Boolean; virtual;
-    Function SetStageReporting(StageID: TPTStageID; StageReporting: Boolean): Boolean; virtual;
+    Function GetStageMaximum(Stage: TPTStageID): UInt64; virtual;
+    Function SetStageMaximum(Stage: TPTStageID; Maximum: UInt64): UInt64; virtual;
+    Function GetStagePosition(Stage: TPTStageID): UInt64; virtual;
+    Function SetStagePosition(Stage: TPTStageID; Position: UInt64): UInt64; virtual;
+    Function GetStageProgress(Stage: TPTStageID): Double; virtual;
+    Function SetStageProgress(Stage: TPTStageID; Progress: Double): Double; virtual;
+    Function GetStageReporting(Stage: TPTStageID): Boolean; virtual;
+    Function SetStageReporting(Stage: TPTStageID; StageReporting: Boolean): Boolean; virtual;
     // properties
+    property Progress: Double read GetProgress;
     property ConsecutiveStages: Boolean read GetConsecutiveStages write SetConsecutiveStages;
     property StrictlyGrowing: Boolean read GetStrictlyGrowing write SetStrictlyGrowing;
     property MinProgressDelta: Double read GetMinProgressDelta write SetMinProgressDelta;
     property GlobalSettings: Boolean read GetGlobalSettings write SetGlobalSettings;
+    // nodes/(sub)stages
     property Nodes[Index: Integer]: TProgressStageNode read GetNode;
-    property StageNodes[StageID: TPTStageID]: TProgressStageNode read GetStageNode;
-    property Stages[StageID: TPTStageID]: Double read GetStage write SetStage; default;
+    property StageNodes[Stage: TPTStageID]: TProgressStageNode read GetStageNode;
+    property Stages[Stage: TPTStageID]: Double read GetStage write SetStage; default;
+    property SubStageCount[Stage: TPTStageID]: Integer read GetSubStageCount;
+    property SubStageNodes[Stage: TPTStageID; Index: Integer]: TProgressStageNode read GetSubstageNode;
+    property SubStages[Stage: TPTStageID; Index: Integer]: TPTStageID read GetSubStage;
     // events
     property OnProgress: TFloatEvent read fOnProgressEvent write fOnProgressEvent;
     property OnProgressEvent: TFloatEvent read fOnProgressEvent write fOnProgressEvent;
@@ -438,12 +619,12 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressStageNode.GetStage(Index: Integer): TProgressStageNode;
+Function TProgressStageNode.GetSubStage(Index: Integer): TProgressStageNode;
 begin
 If CheckIndex(Index) then
-  Result := fStages[Index]
+  Result := fSubStages[Index]
 else
-  raise EPTIndexOutOfBounds.CreateFmt('TProgressStageNode.GetStage: Index (%d) out of bounds.',[Index]);
+  raise EPTIndexOutOfBounds.CreateFmt('TProgressStageNode.GetSubStage: Index (%d) out of bounds.',[Index]);
 end;
 
 //------------------------------------------------------------------------------
@@ -454,7 +635,7 @@ var
 begin
 If fGlobalSettings then
   For i := LowIndex to HighIndex do
-    fStages[i].ConsecutiveStages := Value;
+    fSubStages[i].ConsecutiveStages := Value;
 If Value <> fConsecutiveStages then
   begin
     fConsecutiveStages := Value;
@@ -471,7 +652,7 @@ var
 begin
 If fGlobalSettings then
   For i := LowIndex to HighIndex do
-    fStages[i].StrictlyGrowing := Value;
+    fSubStages[i].StrictlyGrowing := Value;
 If Value <> fStrictlyGrowing then
   begin
     fStrictlyGrowing := Value;
@@ -491,7 +672,7 @@ var
 begin
 If fGlobalSettings then
   For i := LowIndex to HighIndex do
-    fStages[i].MinProgressDelta := Value;
+    fSubStages[i].MinProgressDelta := Value;
 If Value <> fMinProgressDelta then
   fMinProgressDelta := LimitValue(Value);
 end;
@@ -503,16 +684,16 @@ var
   i:  Integer;
 begin
 For i := LowIndex to HighIndex do
-  fStages[i].GlobalSettings := Value;
+  fSubStages[i].GlobalSettings := Value;
 If Value <> fGlobalSettings then
   begin
     fGlobalSettings := Value;
     If fGlobalSettings then
       For i := LowIndex to HighIndex do
         begin
-          fStages[i].ConsecutiveStages := fConsecutiveStages;
-          fStages[i].StrictlyGrowing := fStrictlyGrowing;
-          fStages[i].MinProgressDelta := fMinProgressDelta;
+          fSubStages[i].ConsecutiveStages := fConsecutiveStages;
+          fSubStages[i].StrictlyGrowing := fStrictlyGrowing;
+          fSubStages[i].MinProgressDelta := fMinProgressDelta;
         end;
   end;
 end;
@@ -523,7 +704,7 @@ end;
 
 Function TProgressStageNode.GetCapacity: Integer;
 begin
-Result := Length(fStages);
+Result := Length(fSubStages);
 end;
 
 //------------------------------------------------------------------------------
@@ -534,12 +715,12 @@ var
 begin
 If Value >= 0 then
   begin
-    If Value <> Length(fStages) then
+    If Value <> Length(fSubStages) then
       begin
         If Value < Count then
           For i := Value to HighIndex do
-            FreeAndNil(fStages[i]);
-        SetLength(fStages,Value);
+            FreeAndNil(fSubStages[i]);
+        SetLength(fSubStages,Value);
       end;
   end
 else raise EPTInvalidValue.CreateFmt('TProgressStageNode.SetCapacity: Invalid capacity (%d).',[Value]);
@@ -549,7 +730,7 @@ end;
 
 Function TProgressStageNode.GetCount: Integer;
 begin
-Result := fStageCount;
+Result := fSubStageCount;
 end;
 
 //------------------------------------------------------------------------------
@@ -572,18 +753,18 @@ begin
 // get total absolute length
 AbsLen := 0.0;
 For i := LowIndex to HighIndex do
-  AbsLen := AbsLen + fStages[i].AbsoluteLength;
+  AbsLen := AbsLen + fSubStages[i].AbsoluteLength;
 // recalculate relative length, start and progress
 RelStart := 0.0;
 For i := LowIndex to HighIndex do
   begin
-    fStages[i].RelativeStart := RelStart;
+    fSubStages[i].RelativeStart := RelStart;
     If AbsLen <> 0.0 then
-      fStages[i].RelativeLength := fStages[i].AbsoluteLength / AbsLen
+      fSubStages[i].RelativeLength := fSubStages[i].AbsoluteLength / AbsLen
     else
-      fStages[i].RelativeLength := 0.0;
-    fStages[i].RelativeProgress := fStages[i].RelativeLength * fStages[i].Progress;
-    RelStart := RelStart + fStages[i].RelativeLength;
+      fSubStages[i].RelativeLength := 0.0;
+    fSubStages[i].RelativeProgress := fSubStages[i].RelativeLength * fSubStages[i].Progress;
+    RelStart := RelStart + fSubStages[i].RelativeLength;
   end;
 end;
 
@@ -594,22 +775,22 @@ var
   i:            Integer;
   NewProgress:  Double;
 begin
-If (fStageCount > 0) and (fUpdateCounter <= 0) then
+If (fSubStageCount > 0) and (fUpdateCounter <= 0) then
   begin
     NewProgress := 0.0;
     // recalc relative progress of stages
     For i := LowIndex to HighIndex do
-      fStages[i].RelativeProgress := fStages[i].RelativeLength * fStages[i].Progress;
+      fSubStages[i].RelativeProgress := fSubStages[i].RelativeLength * fSubStages[i].Progress;
     // get new progress
     For i := HighIndex downto LowIndex do
-      If fStages[i].Progress <> 0.0 then
+      If fSubStages[i].Progress <> 0.0 then
         begin
           If fConsecutiveStages then
             begin
-              NewProgress := fStages[i].RelativeStart + fStages[i].RelativeProgress;
+              NewProgress := fSubStages[i].RelativeStart + fSubStages[i].RelativeProgress;
               Break{For i};
             end
-          else NewProgress := NewProgress + fStages[i].RelativeProgress;
+          else NewProgress := NewProgress + fSubStages[i].RelativeProgress;
         end;
     If (NewProgress > fProgress) or ForceChange or not fStrictlyGrowing then
       fProgress := LimitValue(NewProgress);
@@ -628,11 +809,11 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TProgressStageNode.StageProgressHandler(Sender: TObject);
+procedure TProgressStageNode.SubStageProgressHandler(Sender: TObject);
 begin
 RecalculateProgress;
-If (Sender is TProgressStageNode) and Assigned(fOnStageProgressEvent) then
-  fOnStageProgressEvent(Self,TProgressStageNode(Sender).StageID,TProgressStageNode(Sender).Progress);
+If (Sender is TProgressStageNode) and Assigned(fOnSubStageProgressEvent) then
+  fOnSubStageProgressEvent(Self,TProgressStageNode(Sender).ID,TProgressStageNode(Sender).Progress);
 DoProgress;  
 end;
 
@@ -668,9 +849,9 @@ fProgress := 0.0;
 fLastReportedProgress := 0.0;
 // stage (public)
 fSuperStageNode := nil;
-fStageID := PT_STAGEID_INVALID;
-fStageCount := 0;
-SetLEngth(fStages,0);
+fID := PT_STAGEID_INVALID;
+fSubStageCount := 0;
+SetLEngth(fSubStages,0);
 // stage (internal)
 fAbsoluteLength := 0.0;
 fRelativeLength := 0.0;
@@ -688,8 +869,8 @@ fUpdateCounter := 0;
 fOnProgressInternal := nil;
 fOnProgressEvent := nil;
 fOnProgressCallBack := nil;
-fOnStageProgressEvent := nil;
-fOnStageProgressCallBack := nil;
+fOnSubStageProgressEvent := nil;
+fOnSubStageProgressCallBack := nil;
 end;
 
 //------------------------------------------------------------------------------
@@ -700,26 +881,26 @@ begin
 fOnProgressInternal := nil;
 fOnProgressEvent := nil;
 fOnProgressCallBack := nil;
-fOnStageProgressEvent := nil;
-fOnStageProgressCallBack := nil;
+fOnSubStageProgressEvent := nil;
+fOnSubStageProgressCallBack := nil;
 Clear;
 end;
 
 //------------------------------------------------------------------------------
 
-procedure TProgressStageNode.NewStageAt(Index: Integer; AbsoluteLength: Double; StageID: TPTStageID);
+procedure TProgressStageNode.NewSubStageAt(Index: Integer; AbsoluteLength: Double; ID: TPTStageID);
 begin
 // do not check index validity
-fStages[Index] := TProgressStageNode.CreateAsStage(Self,AbsoluteLength,StageID);
-fStages[Index].OnProgressInternal := StageProgressHandler;
+fSubStages[Index] := TProgressStageNode.CreateAsStage(Self,AbsoluteLength,ID);
+fSubStages[Index].OnProgressInternal := SubStageProgressHandler;
 If fGlobalSettings then
   begin
-    fStages[Index].StrictlyGrowing := fStrictlyGrowing;
-    fStages[Index].ConsecutiveStages := fConsecutiveStages;
-    fStages[Index].MinProgressDelta := fMinProgressDelta;
-    fStages[Index].GlobalSettings := fGlobalSettings;
+    fSubStages[Index].StrictlyGrowing := fStrictlyGrowing;
+    fSubStages[Index].ConsecutiveStages := fConsecutiveStages;
+    fSubStages[Index].MinProgressDelta := fMinProgressDelta;
+    fSubStages[Index].GlobalSettings := fGlobalSettings;
   end;
-Inc(fStageCount);
+Inc(fSubStageCount);
 RecalculateRelations;
 RecalculateProgress(True);
 DoProgress;
@@ -737,12 +918,12 @@ end;
 
 //------------------------------------------------------------------------------
 
-constructor TProgressStageNode.CreateAsStage(SuperStageNode: TProgressStageNode; AbsoluteLength: Double; StageID: TPTStageID);
+constructor TProgressStageNode.CreateAsStage(SuperStageNode: TProgressStageNode; AbsoluteLength: Double; ID: TPTStageID);
 begin
 Create;
 fSuperStageNode := SuperStageNode;
 fAbsoluteLength := Abs(AbsoluteLength);
-fStageID := StageID;
+fID := ID;
 end;
 
 //------------------------------------------------------------------------------
@@ -763,7 +944,7 @@ If fUpdateCounter <= 0 then
   fChanged := False;
 Inc(fUpdateCounter);
 For i := LowIndex to HighIndex do
-  fStages[i].BeginUpdate;
+  fSubStages[i].BeginUpdate;
 Result := fUpdateCounter;  
 end;
 
@@ -774,7 +955,7 @@ var
   i:  Integer;
 begin
 For i := LowIndex to HighIndex do
-  fStages[i].EndUpdate;
+  fSubStages[i].EndUpdate;
 Dec(fUpdateCounter);
 If fUpdateCounter <= 0 then
   begin
@@ -794,28 +975,28 @@ end;
 
 Function TProgressStageNode.LowIndex: Integer;
 begin
-Result := Low(fStages);
+Result := Low(fSubStages);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TProgressStageNode.HighIndex: Integer;
 begin
-Result := Pred(fStageCount);
+Result := Pred(fSubStageCount);
 end;
  
 //------------------------------------------------------------------------------
 
 Function TProgressStageNode.First: TProgressStageNode;
 begin
-Result := GetStage(LowIndex);
+Result := GetSubStage(LowIndex);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TProgressStageNode.Last: TProgressStageNode;
 begin
-Result := GetStage(HighIndex);
+Result := GetSubStage(HighIndex);
 end;
 
 //------------------------------------------------------------------------------
@@ -826,7 +1007,7 @@ var
 begin
 Result := -1;
 For i := LowIndex to HighIndex do
-  If fStages[i] = Node then
+  If fSubStages[i] = Node then
     begin
       Result := i;
       Break{For i};
@@ -835,13 +1016,13 @@ end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TProgressStageNode.IndexOf(StageID: TPTStageID): Integer;
+Function TProgressStageNode.IndexOf(SubStage: TPTStageID): Integer;
 var
   i:  Integer;
 begin
 Result := -1;
 For i := LowIndex to HighIndex do
-  If fStages[i].StageID = StageID then
+  If fSubStages[i].ID = SubStage then
     begin
       Result := i;
       Break{For i};
@@ -858,24 +1039,24 @@ end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TProgressStageNode.Find(StageID: TPTStageID; out Index: Integer): Boolean;
+Function TProgressStageNode.Find(SubStage: TPTStageID; out Index: Integer): Boolean;
 begin
-Index := IndexOf(StageID);
+Index := IndexOf(SubStage);
 Result := CheckIndex(Index);
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressStageNode.Add(AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): Integer;
+Function TProgressStageNode.Add(AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): Integer;
 begin
 Grow;
-Result := fStageCount;
-NewStageAt(Result,AbsoluteLength,StageID);
+Result := fSubStageCount;
+NewSubStageAt(Result,AbsoluteLength,ID);
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressStageNode.Insert(Index: Integer; AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): Integer;
+procedure TProgressStageNode.Insert(Index: Integer; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID);
 var
   i:  Integer;
 begin
@@ -883,11 +1064,13 @@ If CheckIndex(Index) then
   begin
     Grow;
     For i := HighIndex downto Index do
-      fStages[i + 1] := fStages[i];
-    NewStageAt(Index,AbsoluteLength,StageID);
-    Result := Index;
+      fSubStages[i + 1] := fSubStages[i];
+    NewSubStageAt(Index,AbsoluteLength,ID);
   end
-else Result := Add(AbsoluteLength,StageID);
+else If Index = Count then
+  Add(AbsoluteLength,ID)
+else
+  raise EPTIndexOutOfBounds.CreateFmt('TProgressStageNode.Insert: Index (%d) out of bounds.',[Index]);
 end;
 
 //------------------------------------------------------------------------------
@@ -903,14 +1086,14 @@ If SrcIdx <> DstIdx then
       raise EPTIndexOutOfBounds.CreateFmt('TProgressStageNode.Move: Source index (%d) out of bounds.',[SrcIdx]);
     If not CheckIndex(DstIdx) then
       raise EPTIndexOutOfBounds.CreateFmt('TProgressStageNode.Move: Destination index (%d) out of bounds.',[DstIdx]);
-    Temp := fStages[SrcIdx];
+    Temp := fSubStages[SrcIdx];
     If SrcIdx < DstIdx then
       For i := SrcIdx to Pred(DstIdx) do
-        fStages[i] := fStages[i + 1]
+        fSubStages[i] := fSubStages[i + 1]
     else
       For i := SrcIdx downto Succ(DstIdx) do
-        fStages[i] := fStages[i - 1];
-    fStages[DstIdx] := Temp;
+        fSubStages[i] := fSubStages[i - 1];
+    fSubStages[DstIdx] := Temp;
     RecalculateRelations;
     RecalculateProgress(True);
     DoProgress;
@@ -929,9 +1112,9 @@ If Idx1 <> Idx2 then
       raise EPTIndexOutOfBounds.CreateFmt('TProgressStageNode.Move: Index 1 (%d) out of bounds.',[Idx1]);
     If not CheckIndex(Idx2) then
       raise EPTIndexOutOfBounds.CreateFmt('TProgressStageNode.Move: Index 2 (%d) out of bounds.',[Idx2]);
-    Temp := fStages[Idx1];
-    fStages[Idx1] := fStages[Idx2];
-    fStages[Idx2] := Temp;
+    Temp := fSubStages[Idx1];
+    fSubStages[Idx1] := fSubStages[Idx2];
+    fSubStages[Idx2] := Temp;
     RecalculateRelations;
     RecalculateProgress(True);
     DoProgress;
@@ -948,10 +1131,10 @@ begin
 Index := IndexOf(Node);
 If CheckIndex(Index) then
   begin
-    Result := fStages[Index];
+    Result := fSubStages[Index];
     For i := Index to Pred(HighIndex) do
-      fStages[i] := fStages[i + 1];
-    Dec(fStageCount);
+      fSubStages[i] := fSubStages[i + 1];
+    Dec(fSubStageCount);
     RecalculateRelations;
     RecalculateProgress(True);
     DoProgress;
@@ -962,18 +1145,18 @@ end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TProgressStageNode.Extract(StageID: TPTStageID): TProgressStageNode;
+Function TProgressStageNode.Extract(SubStage: TPTStageID): TProgressStageNode;
 var
   Index:  Integer;
   i:      Integer;
 begin
-Index := IndexOf(StageID);
+Index := IndexOf(SubStage);
 If CheckIndex(Index) then
   begin
-    Result := fStages[Index];
+    Result := fSubStages[Index];
     For i := Index to Pred(HighIndex) do
-      fStages[i] := fStages[i + 1];
-    Dec(fStageCount);
+      fSubStages[i] := fSubStages[i + 1];
+    Dec(fSubStageCount);
     RecalculateRelations;
     RecalculateProgress(True);
     DoProgress;
@@ -993,9 +1176,9 @@ end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TProgressStageNode.Remove(StageID: TPTStageID): Integer;
+Function TProgressStageNode.Remove(SubStage: TPTStageID): Integer;
 begin
-Result := IndexOf(StageID);
+Result := IndexOf(SubStage);
 If CheckIndex(Result) then
   Delete(Result);
 end;
@@ -1008,10 +1191,10 @@ var
 begin
 If CheckIndex(Index) then
   begin
-    FreeAndNil(fStages[Index]);
+    FreeAndNil(fSubStages[Index]);
     For i := Index to Pred(HighIndex) do
-      fStages[i] := fStages[i + 1];
-    Dec(fStageCount);
+      fSubStages[i] := fSubStages[i + 1];
+    Dec(fSubStageCount);
     RecalculateRelations;
     RecalculateProgress(True);
     DoProgress;
@@ -1027,22 +1210,22 @@ var
   i:  Integer;
 begin
 For i := LowIndex to HighIndex do
-  FreeAndNil(fStages[i]);
-SetLength(fStages,0);
-fStageCount := 0;
+  FreeAndNil(fSubStages[i]);
+SetLength(fSubStages,0);
+fSubStageCount := 0;
 fProgress := 0.0;
 DoProgress;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressStageNode.SetStageMaximum(StageID: TPTStageID; NewValue: UInt64): Boolean;
+Function TProgressStageNode.SetSubStageMaximum(SubStage: TPTStageID; NewValue: UInt64): Boolean;
 var
   Index:  Integer;
 begin
-If Find(StageID,Index) then
+If Find(SubStage,Index) then
   begin
-    fStages[Index].Maximum := NewValue;
+    fSubStages[Index].Maximum := NewValue;
     Result := True;
   end
 else Result := False;
@@ -1050,13 +1233,13 @@ end;
  
 //------------------------------------------------------------------------------
 
-Function TProgressStageNode.SetStagePosition(StageID: TPTStageID; NewValue: UInt64): Boolean;
+Function TProgressStageNode.SetSubStagePosition(SubStage: TPTStageID; NewValue: UInt64): Boolean;
 var
   Index:  Integer;
 begin
-If Find(StageID,Index) then
+If Find(SubStage,Index) then
   begin
-    fStages[Index].Position := NewValue;
+    fSubStages[Index].Position := NewValue;
     Result := True;
   end
 else Result := False;
@@ -1064,13 +1247,13 @@ end;
    
 //------------------------------------------------------------------------------
 
-Function TProgressStageNode.SetStageProgress(StageID: TPTStageID; NewValue: Double): Boolean;
+Function TProgressStageNode.SetSubStageProgress(SubStage: TPTStageID; NewValue: Double): Boolean;
 var
   Index:  Integer;
 begin
-If Find(StageID,Index) then
+If Find(SubStage,Index) then
   begin
-    fStages[Index].Progress := NewValue;
+    fSubStages[Index].Progress := NewValue;
     Result := True;
   end
 else Result := False;
@@ -1080,7 +1263,7 @@ end;
 
 Function TProgressStageNode.IsSimpleStage: Boolean;
 begin
-Result := fStageCount <= 0;
+Result := fSubStageCount <= 0;
 end;
 
 //------------------------------------------------------------------------------
@@ -1092,6 +1275,28 @@ Result.RelativeLength := fRelativeLength;
 Result.RelativeStart := fRelativeStart;
 Result.RelativeProgress := fRelativeProgress;
 end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressStageNode.SubStageLevel: Integer;
+begin
+If Assigned(fSuperStageNode) then
+  Result := fSuperStageNode.SubStageLevel + 1
+else
+  Result := 0;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressStageNode.TotalSubStageCount: Integer;
+var
+  i:  Integer;
+begin
+Result := fSubStageCount;
+For i := LowIndex to HighIndex do
+  Result := Result + fSubStages[i].TotalSubStageCount;
+end;
+
 
 {===============================================================================
 --------------------------------------------------------------------------------
@@ -1105,11 +1310,18 @@ end;
     TProgressTracker - private methods
 -------------------------------------------------------------------------------}
 
+Function TProgressTracker.GetProgress: Double;
+begin
+Result := fMasterNode.Progress;
+end;
+
+//------------------------------------------------------------------------------
+
 Function TProgressTracker.GetConsecutiveStages: Boolean;
 begin
 Result := fMasterNode.ConsecutiveStages;
 end;
-  
+
 //------------------------------------------------------------------------------
 
 procedure TProgressTracker.SetConsecutiveStages(Value: Boolean);
@@ -1171,26 +1383,56 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.GetStageNode(StageID: TPTStageID): TProgressStageNode;
+Function TProgressTracker.GetStageNode(Stage: TPTStageID): TProgressStageNode;
 begin
-If CheckStageID(StageID) then
-  Result := fStages[Integer(StageID)]
+If CheckStageID(Stage) then
+  Result := fStages[Integer(Stage)]
 else
-  raise EPTInvalidStageID.CreateFmt('TProgressTracker.GetStageNode: Invalid stage ID (%d).',[StageID]);
+  raise EPTInvalidStageID.CreateFmt('TProgressTracker.GetStageNode: Invalid stage ID (%d).',[Integer(Stage)]);
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.GetStage(StageID: TPTStageID): Double;
+Function TProgressTracker.GetStage(Stage: TPTStageID): Double;
 begin
-Result := GetStageNode(StageID).Progress;
+Result := ObtainStageNode(Stage,False).Progress;
 end;
 
 //------------------------------------------------------------------------------
 
-procedure TProgressTracker.SetStage(StageID: TPTStageID; Value: Double);
+procedure TProgressTracker.SetStage(Stage: TPTStageID; Value: Double);
 begin
-GetStageNode(StageID).Progress := Value;
+ObtainStageNode(Stage,False).Progress := Value;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.GetSubStageCount(Stage: TPTStageID): Integer;
+var
+  StageNode:  TProgressStageNode;
+begin
+StageNode := ObtainStageNode(Stage,True);
+Result := StageNode.Count;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.GetSubStageNode(Stage: TPTStageID; Index: Integer): TProgressStageNode;
+var
+  StageNode:  TProgressStageNode;
+begin
+StageNode := ObtainStageNode(Stage,True);
+If StageNode.CheckIndex(Index) then
+  Result := StageNode[Index]
+else
+  raise EPTIndexOutOfBounds.CreateFmt('TProgressTracker.GetSubStageNode: Index (%d) out of bounds.',[Index]);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.GetSubStage(Stage: TPTStageID; Index: Integer): TPTStageID;
+begin
+Result := GetSubStageNode(Stage,Index).ID;
 end;
 
 {-------------------------------------------------------------------------------
@@ -1255,9 +1497,9 @@ begin
 If Sender is TProgressStageNode then
   begin
     If Assigned(fOnStageProgressEvent) then
-      fOnStageProgressEvent(Self,TProgressStageNode(Sender).StageID,Progress);
+      fOnStageProgressEvent(Self,TProgressStageNode(Sender).ID,Progress);
     If Assigned(fOnStageProgressCallback) then
-      fOnStageProgressCallback(Self,TProgressStageNode(Sender).StageID,Progress);
+      fOnStageProgressCallback(Self,TProgressStageNode(Sender).ID,Progress);
   end;
 end;
 
@@ -1266,7 +1508,7 @@ end;
 procedure TProgressTracker.Initialize;
 begin
 fMasterNode := TProgressStageNode.Create;
-fMasterNode.StageID := PT_STAGEID_MASTER;
+fMasterNode.ID := PT_STAGEID_MASTER;
 fMasterNode.OnProgress := OnMasterProgressHandler;
 SetLength(fStages,0);
 fStageCount := 0;
@@ -1305,13 +1547,13 @@ For i := LowStageID to HighStageID do
       Result := i;
       Exit;
     end;
-// if we are here, something bad has happened
-raise EPTException.Create('TProgressTracker.FirstUnassignedStageID: Unable to find any unassigned ID.');
+// if we are here, something really bad has happened
+raise EPTException.Create('TProgressTracker.InternalFirstUnassignedStageID: Unable to find any unassigned ID.');
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.ResolveStageID(StageID: TPTStageID): TPTStageID;
+Function TProgressTracker.ResolveNewStageID(StageID: TPTStageID): TPTStageID;
 begin
 Result := StageID;
 // resolve stage ID
@@ -1324,41 +1566,70 @@ else If StageID > HighStageID then
 else
   // selected stage ID from currently allocated space
   If StageIDAssigned(StageID) then
-    raise EPTStageIDAssigned.CreateFmt('TProgressTracker.ResolveStageID: Selected stage ID (%d) already assigned.',[Integer(StageID)]);
+    raise EPTAssignedStageID.CreateFmt('TProgressTracker.ResolveStageID: Selected stage ID (%d) already assigned.',[Integer(StageID)]);
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.InternalAdd(SuperStageNode: TProgressStageNode; AbsoluteLength: Double; StageID: TPTStageID): TPTStageID;
+Function TProgressTracker.InternalAdd(SuperStageNode: TProgressStageNode; AbsoluteLength: Double; ID: TPTStageID): TPTStageID;
 begin
-ResolveStageID(StageID);
-fStages[Integer(StageID)] := SuperStageNode[SuperStageNode.Add(AbsoluteLength,StageID)];
-Inc(fStageCount);
-Result := StageID;
+SuperStageNode.BeginUpdate;
+try
+  ResolveNewStageID(ID);
+  fStages[Integer(ID)] := SuperStageNode[SuperStageNode.Add(AbsoluteLength,ID)];
+  Inc(fStageCount);
+  Result := ID;
+finally
+  SuperStageNode.EndUpdate;
+end;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.InternalInsert(SuperStageNode: TProgressStageNode; Index: Integer; AbsoluteLength: Double; StageID: TPTStageID): TPTStageID;
+Function TProgressTracker.InternalInsert(SuperStageNode: TProgressStageNode; Index: Integer; AbsoluteLength: Double; ID: TPTStageID): TPTStageID;
 begin
-ResolveStageID(StageID);
-fStages[Integer(StageID)] := SuperStageNode[SuperStageNode.Insert(Index,AbsoluteLength,StageID)];
-Inc(fStageCount);
-Result := StageID;
+SuperStageNode.BeginUpdate;
+try
+  ResolveNewStageID(ID);
+  SuperStageNode.Insert(Index,AbsoluteLength,ID);
+  fStages[Integer(ID)] := SuperStageNode[Index];
+  Inc(fStageCount);
+  Result := ID;
+finally
+  SuperStageNode.EndUpdate;
+end;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.ObtainStageNode(StageID: TPTStageID): TProgressStageNode;
+procedure TProgressTracker.InternalDelete(SuperStageNode: TProgressStageNode; Index: Integer);
 begin
-If CheckStageID(StageID) then
+SuperStageNode.BeginUpdate;
+try
+  fStages[Integer(SuperStageNode[Index].ID)] := nil;
+  Dec(fStageCount,SuperStageNode[Index].TotalSubStageCount + 1);
+  SuperStageNode.Delete(Index);
+finally
+  SuperStageNode.EndUpdate;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.ObtainStageNode(Stage: TPTStageID; AllowMaster: Boolean): TProgressStageNode;
+begin
+If not(AllowMaster and (Stage = PT_STAGEID_MASTER)) then
   begin
-    If Assigned(fStages[Integer(StageID)]) then
-      Result := fStages[Integer(StageID)]
-    else
-      raise EPTUnassignedStageID.CreateFmt('TProgressTracker.ObtainStageNode: Unassigned stage ID (%d).',[Integer(StageID)]);
+    If CheckStageID(Stage) then
+      begin
+        If Assigned(fStages[Integer(Stage)]) then
+          Result := fStages[Integer(Stage)]
+        else
+          raise EPTUnassignedStageID.CreateFmt('TProgressTracker.ObtainStageNode: Unassigned stage ID (%d).',[Integer(Stage)]);
+      end
+    else raise EPTInvalidStageID.CreateFmt('TProgressTracker.ObtainStageNode: Invalid stage ID (%d).',[Integer(Stage)]);
   end
-else raise EPTInvalidStageID.CreateFmt('TProgressTracker.ObtainStageNode: Invalid stage ID (%d).',[Integer(StageID)]);
+else Result := fMasterNode;
 end;
 
 {-------------------------------------------------------------------------------
@@ -1418,7 +1689,24 @@ end;
 
 Function TProgressTracker.HighStageID: TPTStageID;
 begin
-Result := TPTStageID(High(fStages));
+If Length(fStages) > 0 then
+  Result := TPTStageID(High(fStages))
+else
+  Result := PT_STAGEID_INVALID;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.LowSubStageIndex(Stage: TPTStageID): Integer;
+begin
+Result := ObtainStageNode(Stage,True).LowIndex;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.HighSubStageIndex(Stage: TPTStageID): Integer;
+begin
+Result := ObtainStageNode(Stage,True).HighIndex;
 end;
 
 //------------------------------------------------------------------------------
@@ -1433,10 +1721,30 @@ end;
 
 Function TProgressTracker.StageIDAssigned(StageID: TPTStageID): Boolean;
 begin
-If CheckStageID(StageID) then
-  Result := Assigned(fStages[Integer(StageID)])
-else
-  Result := False;
+If StageID <> PT_STAGEID_MASTER then
+  begin
+    If CheckStageID(StageID) then
+      Result := Assigned(fStages[Integer(StageID)])
+    else
+      Result := False;
+  end
+else Result := True;
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.CheckSubStageIndex(Stage: TPTStageID; Index: Integer): Boolean;
+begin
+Result := ObtainStageNode(Stage,True).CheckIndex(Index);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.CheckSubStageID(Stage,SubStageID: TPTStageID): Boolean;
+var
+  Index:  Integer;
+begin
+Result := ObtainStageNode(Stage,True).Find(SubStageID,Index);
 end;
 
 //------------------------------------------------------------------------------
@@ -1447,7 +1755,7 @@ var
 begin
 Result := -1;
 i := Low(fStages);
-If CheckStageID(StageID) then
+If StageIDAssigned(StageID) then
   while i <= Integer(StageID) do
     begin
       If Assigned(fStages[i]) then
@@ -1460,7 +1768,7 @@ end;
 
 Function TProgressTracker.StageIDFromNodeIndex(Index: Integer): TPTStageID;
 begin
-Result := TPTStageID(-1);
+Result := PT_STAGEID_INVALID;
 If CheckIndex(Index) then
   while Index >= 0 do
     begin
@@ -1487,107 +1795,214 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.IndexOf(StageID: TPTStageID; out SuperStage: TPTStageID): Integer;
+Function TProgressTracker.IndexOf(Stage: TPTStageID; out SuperStage: TPTStageID): Integer;
 begin
 Result := -1;
 SuperStage := PT_STAGEID_INVALID;
-If StageIDAssigned(StageID) then
-  If Assigned(fStages[Integer(StageID)].SuperStageNode) then
+If StageIDAssigned(Stage) then
+  If Assigned(fStages[Integer(Stage)].SuperStageNode) then
     begin
-      SuperStage := fStages[Integer(StageID)].SuperStageNode.StageID;
-      Result := fStages[Integer(StageID)].SuperStageNode.IndexOf(fStages[Integer(StageID)]);
+      SuperStage := fStages[Integer(Stage)].SuperStageNode.ID;
+      Result := fStages[Integer(Stage)].SuperStageNode.IndexOf(Stage);
     end;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-Function TProgressTracker.IndexOf(StageID: TPTStageID): Integer;
+Function TProgressTracker.IndexOf(Stage: TPTStageID): Integer;
 var
   SuperStage: TPTStageID;
 begin
-Result := IndexOf(StageID,SuperStage);
+Result := IndexOf(Stage,SuperStage);
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.Add(AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
-begin
-Result := InternalAdd(fMasterNode,AbsoluteLength,StageID);
-end;
-
-//------------------------------------------------------------------------------
-
-Function TProgressTracker.AddIn(SuperStageID: TPTStageID; AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
+Function TProgressTracker.IndexOfIn(SuperStage,Stage: TPTStageID): Integer;
 var
   SuperStageNode: TProgressStageNode;
 begin
-If CheckStageID(SuperStageID,True) then
+SuperStageNode := ObtainStageNode(SuperStage,True);
+Result := SuperStageNode.IndexOf(Stage);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.Add(AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
+begin
+Result := InternalAdd(fMasterNode,AbsoluteLength,ID);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.AddIn(SuperStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
+begin
+If SuperStage = PT_STAGEID_MASTER then
+  Result := InternalAdd(fMasterNode,AbsoluteLength,ID)
+else
+  Result := InternalAdd(ObtainStageNode(SuperStage,False),AbsoluteLength,ID);
+end;
+
+//------------------------------------------------------------------------------
+(*
+Function TProgressTracker.Insert(InsertStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
+begin
+Result := InternalInsert(fMasterNode,fMasterNode.IndexOf(InsertStage),AbsoluteLength,ID);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.InsertIn(SuperStage, InsertStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
+var
+  SuperStageNode: TProgressStageNode;
+begin
+If SuperStage = PT_STAGEID_MASTER then
+  SuperStageNode := fMasterNode
+else
+  SuperStageNode := ObtainStageNode(SuperStage,True);
+Result := InternalInsert(SuperStageNode,SuperStageNode.IndexOf(InsertStage),AbsoluteLength,ID);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.InsertIndex(Index: Integer; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
+begin
+Result := InternalInsert(fMasterNode,Index,AbsoluteLength,ID);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.InsertIndexIn(SuperStage: TPTStageID; Index: Integer; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
+var
+  SuperStageNode: TProgressStageNode;
+begin
+If SuperStage = PT_STAGEID_MASTER then
+  SuperStageNode := fMasterNode
+else
+  SuperStageNode := ObtainStageNode(SuperStage,True);
+Result := InternalInsert(SuperStageNode,Index,AbsoluteLength,ID);
+end;
+*)
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.Remove(Stage: TPTStageID; out SuperStage: TPTStageID): Integer;
+var
+  SuperStageNode: TProgressStageNode;
+begin
+Result := IndexOf(Stage,SuperStage);
+If CheckStageID(SuperStage,True) then
   begin
-    If SuperStageID = PT_STAGEID_MASTER then
+    If SuperStage = PT_STAGEID_MASTER then
       SuperStageNode := fMasterNode
     else
-      SuperStageNode := fStages[Integer(SuperStageID)];
-    If Assigned(SuperStageNode) then
-      Result := InternalAdd(SuperStageNode,AbsoluteLength,StageID)
+      SuperStageNode := ObtainStageNode(SuperStage,False);
+    If SuperStageNode.CheckIndex(Result) then
+      InternalDelete(SuperStageNode,Result);
+  end;
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Function TProgressTracker.Remove(Stage: TPTStageID): Integer;
+var
+  SuperStage: TPTStageID;
+begin
+Result := Remove(Stage,SuperStage);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TProgressTracker.RemoveIn(SuperStage,Stage: TPTStageID): Integer;
+var
+  SuperStageNode: TProgressStageNode;
+begin
+Result := IndexOfIn(SuperStage,Stage);
+If CheckStageID(SuperStage,True) then
+  begin
+    If SuperStage = PT_STAGEID_MASTER then
+      SuperStageNode := fMasterNode
     else
-      raise EPTUnassignedStageID.CreateFmt('TProgressTracker.AddIn: SuperStageID (%d) not assigned.',[Integer(SuperStageID)]);
-  end
-else Result := PT_STAGEID_INVALID;
+      SuperStageNode := ObtainStageNode(SuperStage,False);
+    If SuperStageNode.CheckIndex(Result) then
+      InternalDelete(SuperStageNode,Result);
+  end;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.Insert(InsertStageID: TPTStageID; AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
+procedure TProgressTracker.Delete(Stage: TPTStageID);
+var
+  Index:  Integer;
 begin
-end;
-Function TProgressTracker.InsertIn(SuperStageID, InsertStageID: TPTStageID; AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
-begin
-end;
-Function TProgressTracker.InsertIndex(Index: Integer; AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
-begin
-end;
-Function TProgressTracker.InsertIndexIn(SuperStageID: TPTStageID; Index: Integer; AbsoluteLength: Double; StageID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
-begin
+If fMasterNode.Find(Stage,Index) then
+  InternalDelete(fMasterNode,Index)
+else
+  raise EPTInvalidStageID.CreateFmt('TProgressTracker.Delete: Selected stage (%d) is not a substage of master stage.',[Integer(Stage)]);
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.Remove(StageID: TPTStageID): TPTStageID;
+procedure TProgressTracker.DeleteIn(SuperStage: TPTStageID; Stage: TPTStageID);
+var
+  SuperStageNode: TProgressStageNode;
+  Index:          Integer;
 begin
-end;
-
-//------------------------------------------------------------------------------
-
-procedure TProgressTracker.Delete(StageID: TPTStageID);
-begin
+If SuperStage = PT_STAGEID_MASTER then
+  SuperStageNode := fMasterNode
+else
+  SuperStageNode := ObtainStageNode(SuperStage,False);
+If SuperStageNode.Find(Stage,Index) then
+  InternalDelete(SuperStageNode,Index)
+else
+  raise EPTInvalidStageID.CreateFmt('TProgressTracker.DeleteIn: Selected stage (%d) is not a substage of stage %d.',[Integer(Stage),Integer(SuperStage)]);
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TProgressTracker.DeleteIndex(Index: Integer);
 begin
+If fMasterNode.CheckIndex(Index) then
+  InternalDelete(fMasterNode,Index)
+else
+  raise EPTIndexOutOfBounds.CreateFmt('TProgressTracker.DeleteIndex: Index (%d) out of bounds.',[Index]);
 end;
 
 //------------------------------------------------------------------------------
 
-procedure TProgressTracker.Clear(SuperStageID: TPTStageID = PT_STAGEID_INVALID);
+procedure TProgressTracker.DeleteIndexIn(SuperStage: TPTStageID; Index: Integer);
+var
+  SuperStageNode: TProgressStageNode;
+begin
+If SuperStage = PT_STAGEID_MASTER then
+  SuperStageNode := fMasterNode
+else
+  SuperStageNode := ObtainStageNode(SuperStage,False);
+If SuperStageNode.CheckIndex(Index) then
+  InternalDelete(SuperStageNode,Index)
+else
+  raise EPTIndexOutOfBounds.CreateFmt('TProgressTracker.DeleteIndexIn: Index (%d) out of bounds in stage %d.',[Index,Integer(SuperStage)]);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.Clear(Stage: TPTStageID = PT_STAGEID_INVALID);
 var
   Node: TProgressStageNode;
   i:    Integer;
 begin
-If CheckStageID(SuperStageID) then
+If CheckStageID(Stage) then
   begin
     // clear a specified node
-    Node := ObtainStageNode(SuperStageID);
-    Dec(fStageCount,Node.Count);
+    Node := ObtainStageNode(Stage,False);
+    Dec(fStageCount,Node.TotalSubStageCount);
     For i := Node.LowIndex to Node.HighIndex do
-      fStages[Integer(Node[i].StageID)] := nil;
+      fStages[Integer(Node[i].ID)] := nil;
     Node.Clear;
   end
 else
   begin
     // clear everything
-    fStageCount := 0;    
+    fStageCount := 0;
     SetLength(fStages,0);
     fMasterNode.Clear;
   end;
@@ -1595,28 +2010,28 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.IsSimpleStage(StageID: TPTStageID): Boolean;
+Function TProgressTracker.IsSimpleStage(Stage: TPTStageID): Boolean;
 begin
-Result := ObtainStageNode(StageID).IsSimpleStage;
+Result := ObtainStageNode(Stage,False).IsSimpleStage;
 end;
  
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.IsSubstageOf(SubStageID,StageID: TPTStageID): Boolean;
+Function TProgressTracker.IsSubstageOf(SubStage,Stage: TPTStageID): Boolean;
 var
   Index: Integer;
 begin
-Result := ObtainStageNode(StageID).Find(SubStageID,Index);
+Result := ObtainStageNode(Stage,True).Find(SubStage,Index);
 end;
    
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.IsSuperstageOf(SuperStageID,StageID: TPTStageID): Boolean;
+Function TProgressTracker.IsSuperstageOf(SuperStage,Stage: TPTStageID): Boolean;
 begin
-with ObtainStageNode(StageID) do
+with ObtainStageNode(Stage,False) do
   begin
     If Assigned(SuperStageNode) then
-      Result := SuperStageNode.StageID = SuperStageID
+      Result := SuperStageNode.ID = SuperStage
     else
       Result := False;
   end
@@ -1624,12 +2039,12 @@ end;
  
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.SeperstageOf(StageID: TPTStageID): TPTStageID;
+Function TProgressTracker.SuperstageOf(Stage: TPTStageID): TPTStageID;
 begin
-with ObtainStageNode(StageID) do
+with ObtainStageNode(Stage,False) do
   begin
     If Assigned(SuperStageNode) then
-      Result := SuperStageNode.StageID
+      Result := SuperStageNode.ID
     else
       Result := PT_STAGEID_INVALID;
   end;
@@ -1637,123 +2052,96 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.SubstageCountOf(StageID: TPTStageID): Integer;
-begin
-Result := ObtainStageNode(StageID).Count;
-end;
-
-//------------------------------------------------------------------------------
-
-Function TProgressTracker.SubstagesOf(StageID: TPTStageID): TPTStageArray;
-var
-  Node: TProgressStageNode;
-  i:    Integer;
-begin
-Node := ObtainStageNode(StageID);
-SetLength(Result,Node.Count);
-For i := Node.LowIndex to Node.HighIndex do
-  Result[i - Node.LowIndex] := Node[i].StageID;
-end;
- 
-//------------------------------------------------------------------------------
-
-Function TProgressTracker.StagePath(StageID: TPTStageID; IncludeMaster: Boolean = False): TPTStageArray;
+Function TProgressTracker.StagePath(Stage: TPTStageID; IncludeMaster: Boolean = False): TPTStageArray;
 var
   Node:   TProgressStageNode;
   i:      Integer;
 begin
-// count levels and preallocate result array
-i := 1;
-Node := ObtainStageNode(StageID);
-while Assigned(Node.SuperStageNode) do
-  begin
-    Inc(i);
-    Node := Node.SuperStageNode;
-  end;
+// preallocate result array
+Node := ObtainStageNode(Stage,False);
 If IncludeMaster then
-  SetLength(Result,i)
+  SetLength(Result,Node.SubStageLevel + 1)
 else
-  SetLength(Result,i - 1);
+  SetLength(Result,Node.SubStageLevel);
 // store the IDs
-Node := ObtainStageNode(StageID);
 For i := High(Result) downto Low(Result) do
   begin
-    Result[i] := Node.StageID;
+    Result[i] := Node.ID;
     Node := Node.SuperStageNode;
   end;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.GetStageMaximum(StageID: TPTStageID): UInt64;
+Function TProgressTracker.GetStageMaximum(Stage: TPTStageID): UInt64;
 begin
-Result := ObtainStageNode(StageID).Maximum;
+Result := ObtainStageNode(Stage,False).Maximum;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.SetStageMaximum(StageID: TPTStageID; Maximum: UInt64): UInt64;
+Function TProgressTracker.SetStageMaximum(Stage: TPTStageID; Maximum: UInt64): UInt64;
 var
   Node: TProgressStageNode;
 begin
-Node := ObtainStageNode(StageID);
+Node := ObtainStageNode(Stage,False);
 Result := Node.Maximum;
 Node.Maximum := Maximum;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.GetStagePosition(StageID: TPTStageID): UInt64;
+Function TProgressTracker.GetStagePosition(Stage: TPTStageID): UInt64;
 begin
-Result := ObtainStageNode(StageID).Position;
+Result := ObtainStageNode(Stage,False).Position;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.SetStagePosition(StageID: TPTStageID; Position: UInt64): UInt64;
+Function TProgressTracker.SetStagePosition(Stage: TPTStageID; Position: UInt64): UInt64;
 var
   Node: TProgressStageNode;
 begin
-Node := ObtainStageNode(StageID);
+Node := ObtainStageNode(Stage,False);
 Result := Node.Position;
 Node.Position := Position;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.GetStageProgress(StageID: TPTStageID): Double;
+Function TProgressTracker.GetStageProgress(Stage: TPTStageID): Double;
 begin
-Result := ObtainStageNode(StageID).Progress;
+Result := ObtainStageNode(Stage,False).Progress;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.SetStageProgress(StageID: TPTStageID; Progress: Double): Double;
+Function TProgressTracker.SetStageProgress(Stage: TPTStageID; Progress: Double): Double;
 var
   Node: TProgressStageNode;
 begin
-Node := ObtainStageNode(StageID);
+Node := ObtainStageNode(Stage,False);
 Result := Node.Progress;
 Node.Progress := Progress;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.GetStageReporting(StageID: TPTStageID): Boolean;
+Function TProgressTracker.GetStageReporting(Stage: TPTStageID): Boolean;
 var
   Node: TProgressStageNode;
 begin
-Node := ObtainStageNode(StageID);
+Node := ObtainStageNode(Stage,False);
 Result := TMethod(Node.OnProgress).Code = @TProgressTracker.OnStageProgressHandler;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.SetStageReporting(StageID: TPTStageID; StageReporting: Boolean): Boolean;
+Function TProgressTracker.SetStageReporting(Stage: TPTStageID; StageReporting: Boolean): Boolean;
 var
   Node: TProgressStageNode;
 begin
-Node := ObtainStageNode(StageID);
+Node := ObtainStageNode(Stage,False);
 Result := TMethod(Node.OnProgress).Code = @TProgressTracker.OnStageProgressHandler;
 If StageReporting then
   Node.OnProgress := OnStageProgressHandler
