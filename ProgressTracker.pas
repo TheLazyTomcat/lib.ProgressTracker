@@ -44,6 +44,7 @@ type
   EPTInvalidStageID    = class(EPTException);
   EPTAssignedStageID   = class(EPTException);
   EPTUnassignedStageID = class(EPTException);
+  EPTNotSubStageOf     = class(EPTException);
 
 {===============================================================================
 --------------------------------------------------------------------------------
@@ -210,20 +211,29 @@ type
 --------------------------------------------------------------------------------
 ===============================================================================}
 type
+  TPTTreeSettingsField = (tsfAbsoluteLen,tsfRelativeLen,tsfProgress,tsfMaximum,tsfPosition);
+  
+  TPTTreeSettingsFields = set of TPTTreeSettingsField;
+
   TPTTreeSettings = record
     FullPaths:      Boolean;
     IncludeMaster:  Boolean;
+    HexadecimalIDs: Boolean;
+    ShowHeader:     Boolean;
     PathDelimiter:  String;
     Indentation:    String;
+    ShownFields:    TPTTreeSettingsFields;
   end;
 
 const
   PT_TREESETTINGS_DEFAULT: TPTTreeSettings = (
     FullPaths:      False;
     IncludeMaster:  False;
+    HexadecimalIDs: False;
+    ShowHeader:     False;
     PathDelimiter:  '.';
-    Indentation:    '  '
-  );
+    Indentation:    '  ';
+    ShownFields:    []);
 
 {===============================================================================
     TProgressTracker - class declaration
@@ -367,70 +377,89 @@ type
     Function FirstUnassignedStageID: TPTStageID; virtual;
     // list manipulation methods  
   {
-    IndexOf returns index of stage with given ID within its superstage.
-    First overload also returns the ID of superstage for which the searched
-    stage is a substage. This can be PT_STAGEID_MASTER, indicating the stage
-    is a root stage.
+    IndexOf
 
-    IndexOfIn returns index of selected stage within a given superstage.
-    If the stage is not a substage of selected superstage, it will return
-    negative value.
-    When the SuperStage does not point to a valid stage, the function will
-    raise EPTInvalidStageID or EPTUnassignedStageID exception.
-    SuperStage can be set to PT_STAGEID_MASTER to get index of root stage.
+      Returns index of stage with given ID within its superstage.
+      First overload also returns the ID of superstage for which the searched
+      stage is a substage. This can be PT_STAGEID_MASTER, indicating the stage
+      is a root stage.
+      If the stage is not found, then a negative value is returned and value of
+      SuperStage is undefined.
+
+    IndexOfIn
+
+      Returns index of selected stage within a given superstage.
+      If the stage is not a substage of selected superstage, it will return
+      a negative value.
+      When the SuperStage does not point to a valid stage, the function will
+      return a negative value.
+      SuperStage can be set to PT_STAGEID_MASTER to get index of root stage.
   }
     Function IndexOf(Stage: TPTStageID; out SuperStage: TPTStageID): Integer; overload; virtual;
     Function IndexOf(Stage: TPTStageID): Integer; overload; virtual;
     Function IndexOfIn(SuperStage,Stage: TPTStageID): Integer; virtual;
   {
-    Method Add adds new root stage, method AddIn adds new stage as a substage
-    of a selected superstage.
+    Add
 
-    If SuperStage is not valid, an EPTInvalidStageID or EPTUnassignedStageID
-    (depending whether the ID is completely out of bounds, or it just points to
-    an unassigned ID) exception will be raised.
-    When SuperStage is set to PT_STAGEID_MASTER, the AddIn method is equivalent
-    to method Add.
+      Adds new root stage.
+      If ID parameter is not specified (left as invalid), then the newly added
+      stage will be assigned a first free stage ID and this ID will also be
+      returned.
+      When an ID is specified, and it cannot be used (ie. it is already
+      assigned), an EPTAssignedStageID exception will be raised.
+      If specified ID is beyond allocated space, the space is reallocated so
+      that the requested ID can be used - be careful when using this feature,
+      it will allocate massive memory space when requesting high ID!
 
-    If Stage parameter is not specified (left as invalid), then the newly added
-    stage will be assigned a first free stage ID and this ID will also be
-    returned.
-    When a Stage is specified, and it cannot be used (ie. it is already
-    assigned), an EPTAssignedStageID exception will be raised.
-    If specified Stage is beyond allocated space, the space is reallocated so
-    that the requested ID can be used - be careful when using this feature!
+    AddIn
+
+      Adds new stage as a substage of a selected superstage.
+      If SuperStage is not valid, an EPTInvalidStageID or EPTUnassignedStageID
+      (depending whether the ID is completely out of bounds, or it just points
+      to an unassigned ID) exception will be raised.
+      When SuperStage is set to PT_STAGEID_MASTER, the AddIn method is
+      equivalent to method Add.
+      Parameter ID and result behaves the same as in method Add.
   }
     Function Add(AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
     Function AddIn(SuperStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
   {
+    The ID parameter behaves the same as in add methods. Return value of all
+    insert methods is bound to ID parameter and also behaves the same as in add
+    methods.
+
     Insert
 
-      Inserts new stage to a root stages at position occupied by a stage
-      selected by InserStage parameter.
-      If the InsertStage does not exists, the new stage is simply added at the
-      end.
+      Inserts new stage at a position occupied by a selected stage. The new
+      stage is inserted to the same superstage where the selected insert stage
+      is currently placed.
+      If the InsertStage does not exists or is invalid, then EPTInvalidStageID
+      or EPTUnassignedStageID exception will be raised.
 
     InsertIn
 
       Inserts new substage to a selected superstage at position occupied by
       a stage selected by InsertStage parameter.
-      If the InsertStage does not exists, the new stage is simply added.
+      When the SuperStage is not valid, an EPTInvalidStageID or
+      EPTUnassignedStageID exception will be raised.
+      If the InsertStage does not exist or is not a substage of selected
+      superstage, then an EPTNotSubStageOf exception is raised.
+      SuperStage can be set to PT_STAGEID_MASTER to insert ne stage between
+      root stages.
 
-    InsertIndex
-
-      Inserts new stage to a root stages at position given by Index parameter.
-      If the index is not valid, then the new stage is only added at the end.
-
-    InsertIndexIn
+    InsertInAt
 
       Inserts new substage to a selected superstage at position given by Index
       parameter.
-      If the index is not valid, then the new stage is only added at the end.
+      When the SuperStage is not valid, an EPTInvalidStageID or
+      EPTUnassignedStageID exception will be raised.
+      If the index is not valid or is not equal to substage count, then an
+      EPTIndexOutOfBounds exception will be raised.
+      SuperStage can be set to PT_STAGEID_MASTER.
   }
-    //Function Insert(InsertStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
-    //Function InsertIn(SuperStage, InsertStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
-    //Function InsertIndex(Index: Integer; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
-    //Function InsertIndexIn(SuperStage: TPTStageID; Index: Integer; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
+    Function Insert(InsertStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
+    Function InsertIn(SuperStage,InsertStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
+    Function InsertInAt(SuperStage: TPTStageID; Index: Integer; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
 
     //procedure Exchange(Stage1,Stage2: TPTStageID); overload; virtual;
     //procedure ExchangeIn(SuperStage: TPTStageID; Stage1,Stage2: TPTStageID); overload; virtual;
@@ -443,17 +472,20 @@ type
     //procedure MoveIndexIn(SuperStage: TPTStageID; SrcIdx,DstIdx: Integer); overload; virtual;
 
   {
-    Removes selected stage, if present, and returns its index in appropriate
-    superstage and, in case of first overload, outputs ID of this superstage
-    (can be PT_STAGEID_MASTER).
-    If the stage is not present, the function will return a negative value and
-    value of SuperStage will be undefined.
+    Remove
 
-    RemoveIn removes selected stage, if present, from a given superstage.
-    The superstage must be valid, otherwise an EPTInvalidStageID or
-    EPTUnassignedStageID exception will be raise.
-    If the selected stage is not present in the given superstage, a negative
-    value will be returned.
+      Removes selected stage, if present, and returns its index in appropriate
+      superstage and, in case of first overload, outputs ID of this superstage
+      (can be PT_STAGEID_MASTER).
+      If the stage is not present, the function will return a negative value
+      and value of SuperStage will be undefined.
+
+    RemoveIn
+
+      Removes selected stage, if present, from a given superstage.
+      If the SuperStage is not valid, then a negative value is returned.
+      If the selected stage is not present in the given superstage, a negative
+      value will be returned.
   }
     Function Remove(Stage: TPTStageID; out SuperStage: TPTStageID): Integer; overload; virtual;
     Function Remove(Stage: TPTStageID): Integer; overload; virtual;
@@ -461,9 +493,9 @@ type
   {
     Delete
 
-      Deletes selected root stage.
-      If the selected stage is not a substage of master stage (ie. it is not a
-      root stage), an EPTInvalidStageID exception will be raised.
+      Deletes selected stage.
+      If the selected stage is not valid, an EPTInvalidStageID exception will
+      be raised.
 
     DeleteIn
 
@@ -471,15 +503,9 @@ type
       If the superstage does not exists, this method will return an
       EPTInvalidStageID or EPTUnassignedStageID exception.
       If the selected stage is not a substage of selected superstage, an
-      EPTInvalidStageID exception will be raised.
+      EPTNotSubStageOf exception will be raised.
 
-    DeleteIndex
-
-      Deletes stage at a position given by index from a master stage.
-      If the index does not point to a valid substage, it will raise an
-      EPTIndexOutOfBounds exception.
-
-    DeleteIndexIn
+    DeleteInAt
 
       Deletes stage at a position given by index from a selected superstage.
       If the superstage does not exists, this method will return an
@@ -489,14 +515,15 @@ type
   }
     procedure Delete(Stage: TPTStageID); virtual;
     procedure DeleteIn(SuperStage: TPTStageID; Stage: TPTStageID); virtual;
-    procedure DeleteIndex(Index: Integer); virtual;
-    procedure DeleteIndexIn(SuperStage: TPTStageID; Index: Integer); virtual;
+    procedure DeleteInAt(SuperStage: TPTStageID; Index: Integer); virtual;
   {
     If the parameter SuperStage points to a valid stage node, then only
     substages of this stage will be removed, otherwise all known stages will
     be removed.
-    If the selected stage does not contain any substage, then nothing will
-    happen.
+    If the selected stage is valid and does not contain any substage, then
+    nothing will happen.
+    Setting Stage parameter to PT_STAGEID_MASTER has the same effect as setting
+    it to an invalid value.
   }
     procedure Clear(Stage: TPTStageID = PT_STAGEID_INVALID); virtual;
     // stages information
@@ -505,8 +532,8 @@ type
     Function IsSuperStageOf(SuperStage,Stage: TPTStageID): Boolean; virtual;
     Function SuperStageOf(Stage: TPTStageID): TPTStageID; virtual;
     Function StagePath(Stage: TPTStageID; IncludeMaster: Boolean = False): TPTStageArray; virtual;
-    //procedure StageTree(Tree: TStrings; TreeSettings: TPTTreeSettings); overload; virtual;
-    //procedure StageTree(Tree: TStrings); overload; virtual;
+    procedure StageTree(Tree: TStrings; TreeSettings: TPTTreeSettings); overload; virtual;
+    procedure StageTree(Tree: TStrings); overload; virtual;
     // managed stages access
     Function GetStageMaximum(Stage: TPTStageID): UInt64; virtual;
     Function SetStageMaximum(Stage: TPTStageID; Maximum: UInt64): UInt64; virtual;
@@ -516,6 +543,20 @@ type
     Function SetStageProgress(Stage: TPTStageID; Progress: Double): Double; virtual;
     Function GetStageReporting(Stage: TPTStageID): Boolean; virtual;
     Function SetStageReporting(Stage: TPTStageID; StageReporting: Boolean): Boolean; virtual;
+    // tree streaming
+    {$message 'implement tree streaming'}
+    //procedure SaveToIniStream(Stream: TStream); virtual;    // requires IniFileEx
+    //procedure LoadFromIniStream(Stream: TStream); virtual;  // -||-
+    (*
+    procedure SaveToIniFile(const FileName: String); virtual;
+    procedure LoadFromIniFile(const FileName: String); virtual;
+    procedure SaveToStream(Stream: TStream); virtual;
+    procedure LoadFromStream(Stream: TStream); virtual;
+    procedure SaveToFile(const FileName: String); virtual;
+    procedure LoadFromFile(const FileName: String); virtual;
+    procedure LoadFromResource(const ResName: String; IsIniFile: Boolean = False); virtual;
+    procedure LoadFromResourceID(ResID: Integer; IsIniFile: Boolean = False); virtual;
+    *)    
     // properties
     property Progress: Double read GetProgress;
     property ConsecutiveStages: Boolean read GetConsecutiveStages write SetConsecutiveStages;
@@ -1541,7 +1582,7 @@ var
   i:  TPTStageID;
 begin
 Grow;
-For i := LowStageID to HighStageID do
+For i := TPTStageID(Low(fStages)) to TPTStageID(High(fStages)) do
   If not Assigned(fStages[Integer(i)]) then
     begin
       Result := i;
@@ -1575,7 +1616,7 @@ Function TProgressTracker.InternalAdd(SuperStageNode: TProgressStageNode; Absolu
 begin
 SuperStageNode.BeginUpdate;
 try
-  ResolveNewStageID(ID);
+  ID := ResolveNewStageID(ID);
   fStages[Integer(ID)] := SuperStageNode[SuperStageNode.Add(AbsoluteLength,ID)];
   Inc(fStageCount);
   Result := ID;
@@ -1590,7 +1631,7 @@ Function TProgressTracker.InternalInsert(SuperStageNode: TProgressStageNode; Ind
 begin
 SuperStageNode.BeginUpdate;
 try
-  ResolveNewStageID(ID);
+  ID := ResolveNewStageID(ID);
   SuperStageNode.Insert(Index,AbsoluteLength,ID);
   fStages[Integer(ID)] := SuperStageNode[Index];
   Inc(fStageCount);
@@ -1803,7 +1844,8 @@ If StageIDAssigned(Stage) then
   If Assigned(fStages[Integer(Stage)].SuperStageNode) then
     begin
       SuperStage := fStages[Integer(Stage)].SuperStageNode.ID;
-      Result := fStages[Integer(Stage)].SuperStageNode.IndexOf(Stage);
+      If StageIDAssigned(SuperStage) then
+        Result := fStages[Integer(Stage)].SuperStageNode.IndexOf(Stage);
     end;
 end;
 
@@ -1822,8 +1864,12 @@ Function TProgressTracker.IndexOfIn(SuperStage,Stage: TPTStageID): Integer;
 var
   SuperStageNode: TProgressStageNode;
 begin
-SuperStageNode := ObtainStageNode(SuperStage,True);
-Result := SuperStageNode.IndexOf(Stage);
+If StageIDAssigned(SuperStage) then
+  begin
+    SuperStageNode := ObtainStageNode(SuperStage,True);
+    Result := SuperStageNode.IndexOf(Stage);
+  end
+else Result := -1;
 end;
 
 //------------------------------------------------------------------------------
@@ -1837,52 +1883,46 @@ end;
 
 Function TProgressTracker.AddIn(SuperStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
 begin
-If SuperStage = PT_STAGEID_MASTER then
-  Result := InternalAdd(fMasterNode,AbsoluteLength,ID)
-else
-  Result := InternalAdd(ObtainStageNode(SuperStage,False),AbsoluteLength,ID);
+Result := InternalAdd(ObtainStageNode(SuperStage,True),AbsoluteLength,ID);
 end;
 
 //------------------------------------------------------------------------------
-(*
+
 Function TProgressTracker.Insert(InsertStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
-begin
-Result := InternalInsert(fMasterNode,fMasterNode.IndexOf(InsertStage),AbsoluteLength,ID);
-end;
-
-//------------------------------------------------------------------------------
-
-Function TProgressTracker.InsertIn(SuperStage, InsertStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
 var
   SuperStageNode: TProgressStageNode;
 begin
-If SuperStage = PT_STAGEID_MASTER then
-  SuperStageNode := fMasterNode
-else
-  SuperStageNode := ObtainStageNode(SuperStage,True);
-Result := InternalInsert(SuperStageNode,SuperStageNode.IndexOf(InsertStage),AbsoluteLength,ID);
+SuperStageNode := ObtainStageNode(SuperStageOf(InsertStage),True);
+Result := InternalInsert(SuperStageNode,SuperStageNode.IndexOf(InsertStage),AbsoluteLength,ID)
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.InsertIndex(Index: Integer; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
+Function TProgressTracker.InsertIn(SuperStage,InsertStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
+var
+  SuperStageNode: TProgressStageNode;
+  Index:          Integer;
 begin
-Result := InternalInsert(fMasterNode,Index,AbsoluteLength,ID);
+SuperStageNode := ObtainStageNode(SuperStage,True);
+If SuperStageNode.Find(InsertStage,Index) then
+  Result := InternalInsert(SuperStageNode,Index,AbsoluteLength,ID)
+else
+  raise EPTNotSubStageOf.CreateFmt('TProgressTracker.InsertIn: Stage %d is not a substage of stage %d.',[Integer(InsertStage),Integer(SuperStage)]);
 end;
 
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.InsertIndexIn(SuperStage: TPTStageID; Index: Integer; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
+Function TProgressTracker.InsertInAt(SuperStage: TPTStageID; Index: Integer; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID;
 var
   SuperStageNode: TProgressStageNode;
 begin
-If SuperStage = PT_STAGEID_MASTER then
-  SuperStageNode := fMasterNode
+SuperStageNode := ObtainStageNode(SuperStage,True);
+If SuperStageNode.CheckIndex(Index) or (Index = SuperStageNode.Count) then
+  Result := InternalInsert(SuperStageNode,Index,AbsoluteLength,ID)
 else
-  SuperStageNode := ObtainStageNode(SuperStage,True);
-Result := InternalInsert(SuperStageNode,Index,AbsoluteLength,ID);
+  raise EPTIndexOutOfBounds.CreateFmt('TProgressTracker.InsertInAt: Index (%d) out of bounds.',[Index]);
 end;
-*)
+
 //------------------------------------------------------------------------------
 
 Function TProgressTracker.Remove(Stage: TPTStageID; out SuperStage: TPTStageID): Integer;
@@ -1890,12 +1930,9 @@ var
   SuperStageNode: TProgressStageNode;
 begin
 Result := IndexOf(Stage,SuperStage);
-If CheckStageID(SuperStage,True) then
+If Result >= 0 then // no need to check SuperStage, it was checked in IndexOf
   begin
-    If SuperStage = PT_STAGEID_MASTER then
-      SuperStageNode := fMasterNode
-    else
-      SuperStageNode := ObtainStageNode(SuperStage,False);
+    SuperStageNode := ObtainStageNode(SuperStage,True);
     If SuperStageNode.CheckIndex(Result) then
       InternalDelete(SuperStageNode,Result);
   end;
@@ -1917,12 +1954,9 @@ var
   SuperStageNode: TProgressStageNode;
 begin
 Result := IndexOfIn(SuperStage,Stage);
-If CheckStageID(SuperStage,True) then
+If Result >= 0 then
   begin
-    If SuperStage = PT_STAGEID_MASTER then
-      SuperStageNode := fMasterNode
-    else
-      SuperStageNode := ObtainStageNode(SuperStage,False);
+    SuperStageNode := ObtainStageNode(SuperStage,True);
     If SuperStageNode.CheckIndex(Result) then
       InternalDelete(SuperStageNode,Result);
   end;
@@ -1932,12 +1966,14 @@ end;
 
 procedure TProgressTracker.Delete(Stage: TPTStageID);
 var
-  Index:  Integer;
+  Index:      Integer;
+  SuperStage: TPTStageID;
 begin
-If fMasterNode.Find(Stage,Index) then
-  InternalDelete(fMasterNode,Index)
+Index := IndexOf(Stage,SuperStage);
+If Index >= 0 then
+  InternalDelete(ObtainStageNode(SuperStage,True),Index)
 else
-  raise EPTInvalidStageID.CreateFmt('TProgressTracker.Delete: Selected stage (%d) is not a substage of master stage.',[Integer(Stage)]);
+  raise EPTInvalidStageID.CreateFmt('TProgressTracker.Delete: Invalid stage ID (%d).',[Integer(Stage)]);
 end;
 
 //------------------------------------------------------------------------------
@@ -1947,40 +1983,24 @@ var
   SuperStageNode: TProgressStageNode;
   Index:          Integer;
 begin
-If SuperStage = PT_STAGEID_MASTER then
-  SuperStageNode := fMasterNode
-else
-  SuperStageNode := ObtainStageNode(SuperStage,False);
+SuperStageNode := ObtainStageNode(SuperStage,True);
 If SuperStageNode.Find(Stage,Index) then
   InternalDelete(SuperStageNode,Index)
 else
-  raise EPTInvalidStageID.CreateFmt('TProgressTracker.DeleteIn: Selected stage (%d) is not a substage of stage %d.',[Integer(Stage),Integer(SuperStage)]);
+  raise EPTNotSubStageOf.CreateFmt('TProgressTracker.DeleteIn: Stage %d is not a substage of stage %d.',[Integer(Stage),Integer(SuperStage)]);
 end;
 
 //------------------------------------------------------------------------------
 
-procedure TProgressTracker.DeleteIndex(Index: Integer);
-begin
-If fMasterNode.CheckIndex(Index) then
-  InternalDelete(fMasterNode,Index)
-else
-  raise EPTIndexOutOfBounds.CreateFmt('TProgressTracker.DeleteIndex: Index (%d) out of bounds.',[Index]);
-end;
-
-//------------------------------------------------------------------------------
-
-procedure TProgressTracker.DeleteIndexIn(SuperStage: TPTStageID; Index: Integer);
+procedure TProgressTracker.DeleteInAt(SuperStage: TPTStageID; Index: Integer);
 var
   SuperStageNode: TProgressStageNode;
 begin
-If SuperStage = PT_STAGEID_MASTER then
-  SuperStageNode := fMasterNode
-else
-  SuperStageNode := ObtainStageNode(SuperStage,False);
+SuperStageNode := ObtainStageNode(SuperStage,True);
 If SuperStageNode.CheckIndex(Index) then
   InternalDelete(SuperStageNode,Index)
 else
-  raise EPTIndexOutOfBounds.CreateFmt('TProgressTracker.DeleteIndexIn: Index (%d) out of bounds in stage %d.',[Index,Integer(SuperStage)]);
+  raise EPTIndexOutOfBounds.CreateFmt('TProgressTracker.DeleteInAt: Index (%d) out of bounds.',[Index]);
 end;
 
 //------------------------------------------------------------------------------
@@ -2026,7 +2046,7 @@ end;
    
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.IsSuperstageOf(SuperStage,Stage: TPTStageID): Boolean;
+Function TProgressTracker.IsSuperStageOf(SuperStage,Stage: TPTStageID): Boolean;
 begin
 with ObtainStageNode(Stage,False) do
   begin
@@ -2039,7 +2059,7 @@ end;
  
 //------------------------------------------------------------------------------
 
-Function TProgressTracker.SuperstageOf(Stage: TPTStageID): TPTStageID;
+Function TProgressTracker.SuperStageOf(Stage: TPTStageID): TPTStageID;
 begin
 with ObtainStageNode(Stage,False) do
   begin
@@ -2069,6 +2089,20 @@ For i := High(Result) downto Low(Result) do
     Result[i] := Node.ID;
     Node := Node.SuperStageNode;
   end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.StageTree(Tree: TStrings; TreeSettings: TPTTreeSettings);
+begin
+{$message 'implement stagetree'}
+end;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+procedure TProgressTracker.StageTree(Tree: TStrings);
+begin
+StageTree(Tree,PT_TREESETTINGS_DEFAULT);
 end;
 
 //------------------------------------------------------------------------------
