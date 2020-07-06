@@ -45,6 +45,7 @@ type
   EPTAssignedStageID   = class(EPTException);
   EPTUnassignedStageID = class(EPTException);
   EPTNotSubStageOf     = class(EPTException);
+  EPTSuperStageDiffer  = class(EPTException);
 
 {===============================================================================
 --------------------------------------------------------------------------------
@@ -219,9 +220,9 @@ type
     FullPaths:      Boolean;
     IncludeMaster:  Boolean;
     HexadecimalIDs: Boolean;
-    ShowHeader:     Boolean;
     PathDelimiter:  String;
     Indentation:    String;
+    ShowHeader:     Boolean;
     ShownFields:    TPTTreeSettingsFields;
   end;
 
@@ -230,9 +231,9 @@ const
     FullPaths:      False;
     IncludeMaster:  False;
     HexadecimalIDs: False;
-    ShowHeader:     False;
     PathDelimiter:  '.';
     Indentation:    '  ';
+    ShowHeader:     False; 
     ShownFields:    []);
 
 {===============================================================================
@@ -460,17 +461,70 @@ type
     Function Insert(InsertStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
     Function InsertIn(SuperStage,InsertStage: TPTStageID; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
     Function InsertInAt(SuperStage: TPTStageID; Index: Integer; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): TPTStageID; virtual;
+  {
+    Exchange
 
-    //procedure Exchange(Stage1,Stage2: TPTStageID); overload; virtual;
-    //procedure ExchangeIn(SuperStage: TPTStageID; Stage1,Stage2: TPTStageID); overload; virtual;
-    //procedure ExchangeIndex(Idx1,Idx2: Integer); overload; virtual;
-    //procedure ExchangeIndexIn(SuperStage: TPTStageID; Idx1,Idx2: Integer); overload; virtual;
+      Exchanges two selected stages. The stages must differ, otherwise the
+      method exits immediately and does not perform any operation.
+      If any of the stages is not valid, then an EPTInvalidStageID exception
+      is raised.
+      Both stages must be a substage of the same superstage, otherwise an
+      EPTSuperStageDiffer exception will be raised.
 
-    //procedure Move(SrcStage,DstStage: TPTStageID); overload; virtual;
-    //procedure MoveIn(SuperStage: TPTStageID; SrcStage,DstStage: TPTStageID); overload; virtual;
-    //procedure MoveIndex(SrcIdx,DstIdx: Integer); overload; virtual;
-    //procedure MoveIndexIn(SuperStage: TPTStageID; SrcIdx,DstIdx: Integer); overload; virtual;
+    ExchangeIn
 
+      Exchanges two stages in a selected superstage. The stages must differ,
+      otherwise the method exits immediately without performing any operation.
+      When the selected SuperStage is not valid, an EPTInvalidStageID or
+      EPTUnassignedStageID exception will be raised.
+      If any of the stages is not valid or is not a substage of selected
+      superstage, then an EPTInvalidStageID exception is raised.
+
+    ExchangeInAt
+
+      Exchanges two stages in a selected superstage at positions given by
+      indices. The indices must differ, otherwise no operation is performed.
+      When the selected SuperStage is not valid, an EPTInvalidStageID or
+      EPTUnassignedStageID exception will be raised.
+      If any of the indices is not within an allowed bounds, then an
+      EPTIndexOutOfBounds exception is raised.
+  }
+    procedure Exchange(Stage1,Stage2: TPTStageID); virtual;
+    procedure ExchangeIn(SuperStage: TPTStageID; Stage1,Stage2: TPTStageID); virtual;
+    procedure ExchangeInAt(SuperStage: TPTStageID; Idx1,Idx2: Integer); virtual;
+  {
+    Move
+
+      Moves source stage to a place occupied by a destination stage. The stages
+      must differ, otherwise no operation is performed.
+      If any of the stages is not valid, then an EPTInvalidStageID exception
+      is raised.
+      Both stages must be a substage of the same superstage, otherwise an
+      EPTSuperStageDiffer exception will be raised.
+
+    MoveIn
+
+      Moves source stage to a place occupied by a destination stage in a
+      selected superstage. The stages must differ, otherwise the method exits
+      immediately without performing any operation.
+      When the selected SuperStage is not valid, an EPTInvalidStageID or
+      EPTUnassignedStageID exception will be raised.
+      If any of the stages is not valid or is not a substage of selected
+      superstage, then an EPTInvalidStageID exception is raised.
+
+    MoveInAt
+
+      Moves stage at source position (index) to a destination position (index)
+      in a selected superstage. The indices must differ, otherwise no operation
+      is performed.
+      When the selected SuperStage is not valid, an EPTInvalidStageID or
+      EPTUnassignedStageID exception will be raised.
+      If any of the indices is not within an allowed bounds, then an
+      EPTIndexOutOfBounds exception is raised.
+  }
+    procedure Move(SrcStage,DstStage: TPTStageID); virtual;
+    procedure MoveIn(SuperStage: TPTStageID; SrcStage,DstStage: TPTStageID); virtual;
+    procedure MoveInAt(SuperStage: TPTStageID; SrcIdx,DstIdx: Integer); virtual;
   {
     Remove
 
@@ -1640,7 +1694,7 @@ finally
   SuperStageNode.EndUpdate;
 end;
 end;
-
+ 
 //------------------------------------------------------------------------------
 
 procedure TProgressTracker.InternalDelete(SuperStageNode: TProgressStageNode; Index: Integer);
@@ -1925,6 +1979,124 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TProgressTracker.Exchange(Stage1,Stage2: TPTStageID);
+var
+  Idx1,Idx2:    Integer;
+  SuperStage1:  TPTStageID;
+  SuperStage2:  TPTStageID;
+begin
+If Stage1 <> Stage2 then
+  begin
+    Idx1 := IndexOf(Stage1,SuperStage1);
+    Idx2 := IndexOf(Stage2,SuperStage2);
+    If Idx1 < 0 then
+      raise EPTInvalidStageID.CreateFmt('TProgressTracker.Exchange: Invalid stage ID #1 (%d).',[Integer(Stage1)]);
+    If Idx2 < 0 then
+      raise EPTInvalidStageID.CreateFmt('TProgressTracker.Exchange: Invalid stage ID #2 (%d).',[Integer(Stage2)]);
+    If SuperStage1 <> SuperStage2 then
+      raise EPTSuperStageDiffer.CreateFmt('TProgressTracker.Exchange: Superstages differ (%d,%d)',[Integer(SuperStage1),Integer(SuperStage2)]);
+    ObtainStageNode(SuperStage1,True).Exchange(Idx1,Idx2);
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.ExchangeIn(SuperStage: TPTStageID; Stage1,Stage2: TPTStageID);
+var
+  SuperStageNode: TProgressStageNode;
+  Idx1,Idx2:      Integer;
+begin
+If Stage1 <> Stage2 then
+  begin
+    SuperStageNode := ObtainStageNode(SuperStage,True);
+    Idx1 := SuperStageNode.IndexOf(Stage1);
+    Idx2 := SuperStageNode.IndexOf(Stage2);
+    If Idx1 < 0 then
+      raise EPTInvalidStageID.CreateFmt('TProgressTracker.ExchangeIn: Invalid stage ID #1 (%d).',[Integer(Stage1)]);
+    If Idx2 < 0 then
+      raise EPTInvalidStageID.CreateFmt('TProgressTracker.ExchangeIn: Invalid stage ID #2 (%d).',[Integer(Stage2)]);
+    SuperStageNode.Exchange(Idx1,Idx2);
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.ExchangeInAt(SuperStage: TPTStageID; Idx1,Idx2: Integer);
+var
+  SuperStageNode: TProgressStageNode;
+begin
+If Idx1 <> Idx2 then
+  begin
+    SuperStageNode := ObtainStageNode(SuperStage,True);
+    If not SuperStageNode.CheckIndex(Idx1) then
+      raise EPTIndexOutOfBounds.CreateFmt('TProgressTracker.ExchangeInAt: Index #1 (%d) out of bounds.',[Idx1]);
+    If not SuperStageNode.CheckIndex(Idx2) then
+      raise EPTIndexOutOfBounds.CreateFmt('TProgressTracker.ExchangeInAt: Index #2 (%d) out of bounds.',[Idx2]);
+    SuperStageNode.Exchange(Idx1,Idx2);
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.Move(SrcStage,DstStage: TPTStageID);
+var
+  SrcIdx,DstIdx:  Integer;
+  SrcSuperStage:  TPTStageID;
+  DstSuperStage:  TPTStageID;
+begin
+If SrcStage <> DstStage then
+  begin
+    SrcIdx := IndexOf(SrcStage,SrcSuperStage);
+    DstIdx := IndexOf(DstStage,DstSuperStage);
+    If SrcIdx < 0 then
+      raise EPTInvalidStageID.CreateFmt('TProgressTracker.Move: Invalid source stage ID (%d).',[Integer(SrcStage)]);
+    If DstIdx < 0 then
+      raise EPTInvalidStageID.CreateFmt('TProgressTracker.Move: Invalid destination stage ID (%d).',[Integer(DstStage)]);
+    If SrcSuperStage <> DstSuperStage then
+      raise EPTSuperStageDiffer.CreateFmt('TProgressTracker.Move: Superstages differ (%d,%d)',[Integer(SrcSuperStage),Integer(DstSuperStage)]);
+    ObtainStageNode(SrcSuperStage,True).Move(SrcIdx,DstIdx);
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.MoveIn(SuperStage: TPTStageID; SrcStage,DstStage: TPTStageID);
+var
+  SuperStageNode: TProgressStageNode;
+  SrcIdx,DstIdx:  Integer;
+begin
+If SrcStage <> DstStage then
+  begin
+    SuperStageNode := ObtainStageNode(SuperStage,True);
+    SrcIdx := SuperStageNode.IndexOf(SrcStage);
+    DstIdx := SuperStageNode.IndexOf(DstStage);
+    If SrcIdx < 0 then
+      raise EPTInvalidStageID.CreateFmt('TProgressTracker.MoveIn: Invalid source stage ID (%d).',[Integer(SrcStage)]);
+    If DstIdx < 0 then
+      raise EPTInvalidStageID.CreateFmt('TProgressTracker.MoveIn: Invalid destination stage ID (%d).',[Integer(DstStage)]);
+    SuperStageNode.Move(SrcIdx,DstIdx);
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.MoveInAt(SuperStage: TPTStageID; SrcIdx,DstIdx: Integer);
+var
+  SuperStageNode: TProgressStageNode;
+begin
+If SrcIdx <> DstIdx then
+  begin
+    SuperStageNode := ObtainStageNode(SuperStage,True); 
+    If not SuperStageNode.CheckIndex(SrcIdx) then
+      raise EPTIndexOutOfBounds.CreateFmt('TProgressTracker.MoveInAt: Source index (%d) out of bounds.',[SrcIdx]);
+    If not SuperStageNode.CheckIndex(DstIdx) then
+      raise EPTIndexOutOfBounds.CreateFmt('TProgressTracker.MoveInAt: Destination index (%d) out of bounds.',[DstIdx]);
+    SuperStageNode.Move(SrcIdx,DstIdx);
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
 Function TProgressTracker.Remove(Stage: TPTStageID; out SuperStage: TPTStageID): Integer;
 var
   SuperStageNode: TProgressStageNode;
@@ -2094,8 +2266,110 @@ end;
 //------------------------------------------------------------------------------
 
 procedure TProgressTracker.StageTree(Tree: TStrings; TreeSettings: TPTTreeSettings);
+{
+  Output is necessary because the Tree might nog have Objects property (which
+  is needed) implemented.
+}
+var
+  Output: TStringList;
+
+  procedure SubTreePath(Node: TProgressStageNode; const Line: String);
+
+    Function IDAsString: String;
+    begin
+      If TreeSettings.HexadecimalIDs then
+        Result := Format('0x%.8x',[Integer(Node.ID)])
+      else
+        Result := Format('%d',[Integer(Node.ID)])
+    end;
+    
+  var
+    ii:   Integer;
+    Temp: String;
+  begin
+    Output.AddObject(Format('%s%s',[Line,IDAsString]),Node);
+    If not Node.IsSimpleStage then
+      begin
+        If TreeSettings.FullPaths then
+          Temp := Format('%s%s%s',[Line,IDAsString,TreeSettings.PathDelimiter])
+        else
+          Temp := Format('%s%s',[Line,TreeSettings.Indentation]);
+        For ii := Node.LowIndex to Node.HighIndex do
+          SubTreePath(Node[ii],Temp);
+      end;
+  end;
+
+var
+  i:    Integer;
+  Len:  Integer;
+  Line: String;
+  Info: TPTStageData;
 begin
-{$message 'implement stagetree'}
+Output := TStringList.Create;
+try
+  // first get all paths
+  If not TreeSettings.IncludeMaster then
+    begin
+      For i := fMasterNode.LowIndex to fMasterNode.HighIndex do
+        SubTreePath(fMasterNode[i],'');
+    end
+  else SubTreePath(fMasterNode,'');
+  If Output.Count > 0 then
+    begin
+      // get length of longest path
+      Len := Length('Stages');
+      For i := 0 to Pred(Output.Count) do
+        If Length(Output[i]) > Len then
+          Len := Length(Output[i]);
+      // build and insert header
+      If TreeSettings.ShowHeader then
+        begin
+          Output.Insert(0,'');
+          If TreeSettings.ShownFields <> [] then
+            begin
+              Line := Format('Stages%s',[StringOfChar(' ',Len - Length('Stages'))]);
+              If tsfAbsoluteLen in TreeSettings.ShownFields then
+                Line := Format('%s   Abs.length',[Line]);
+              If tsfRelativeLen in TreeSettings.ShownFields then
+                Line := Format('%s   Rel.length',[Line]);
+              If tsfProgress in TreeSettings.ShownFields then
+                Line := Format('%s   Progress',[Line]);
+              If tsfMaximum in TreeSettings.ShownFields then
+                Line := Format('%s   Maximum   ',[Line]);
+              If tsfPosition in TreeSettings.ShownFields then
+                Line := Format('%s   Position',[Line]);
+              Output.Insert(0,Line);
+            end
+          else Output.Insert(0,'Stages');
+        end;
+      // add values to lines
+      If TreeSettings.ShownFields <> [] then
+        For i := 0 to Pred(Output.Count) do
+          If Output.Objects[i] is TProgressStageNode then
+            begin
+              Line := Format('%s%s',[Output[i],StringOfChar(' ',Len - Length(Output[i]))]);
+              Info := TProgressStageNode(Output.Objects[i]).StageData;
+              If tsfAbsoluteLen in TreeSettings.ShownFields then
+                Line := Format('%s   %-10.4f',[Line,Info.AbsoluteLength]);
+              If tsfRelativeLen in TreeSettings.ShownFields then
+                Line := Format('%s   %-10.4f',[Line,Info.RelativeLength]);
+              If tsfProgress in TreeSettings.ShownFields then
+                Line := Format('%s   %-8.4f',[Line,TProgressStageNode(Output.Objects[i]).Progress]);
+              If tsfMaximum in TreeSettings.ShownFields then
+                Line := Format('%s   %-10d',[Line,TProgressStageNode(Output.Objects[i]).Maximum]);
+              If tsfPosition in TreeSettings.ShownFields then
+                Line := Format('%s   %-d',[Line,TProgressStageNode(Output.Objects[i]).Position]);
+              Output[i] := Line;
+            end;
+    end;
+  // remove node references
+  For i := 0 to Pred(Output.Count) do
+    Output.Objects[i] := nil;
+  // assign output to tree
+  Tree.Assign(Output);
+finally
+  Output.Free;
+end;
 end;
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
