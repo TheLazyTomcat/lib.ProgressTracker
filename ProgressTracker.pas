@@ -20,6 +20,14 @@
 ===============================================================================}
 unit ProgressTracker;
 
+{$IF Defined(WINDOWS) or Defined(MSWINDOWS)}
+  {$DEFINE Windows}
+{$ELSEIF Defined(LINUX) and Defined(FPC)}
+  {$DEFINE Linux}
+{$ELSE}
+  {$MESSAGE FATAL 'Unsupported operating system.'}
+{$IFEND}
+
 {$IFDEF FPC}
   {$MODE Delphi}
   {$DEFINE FPC_DisableWarns}
@@ -287,6 +295,9 @@ type
     procedure InternalDelete(SuperStageNode: TProgressStageNode; Index: Integer); virtual;
     // utility methods
     Function ObtainStageNode(Stage: TPTStageID; AllowMaster: Boolean): TProgressStageNode; virtual;
+    // move fllowing to public section as soon as they are implemented
+    procedure SaveToIniStream(Stream: TStream); virtual;
+    procedure LoadFromIniStream(Stream: TStream); virtual;
   public
     constructor Create;
     destructor Destroy; override;
@@ -598,10 +609,6 @@ type
     Function GetStageReporting(Stage: TPTStageID): Boolean; virtual;
     Function SetStageReporting(Stage: TPTStageID; StageReporting: Boolean): Boolean; virtual;
     // tree streaming
-    {$message 'implement tree streaming'}
-    //procedure SaveToIniStream(Stream: TStream); virtual;    // requires IniFileEx
-    //procedure LoadFromIniStream(Stream: TStream); virtual;  // -||-
-    (*
     procedure SaveToIniFile(const FileName: String); virtual;
     procedure LoadFromIniFile(const FileName: String); virtual;
     procedure SaveToStream(Stream: TStream); virtual;
@@ -610,7 +617,6 @@ type
     procedure LoadFromFile(const FileName: String); virtual;
     procedure LoadFromResource(const ResName: String; IsIniFile: Boolean = False); virtual;
     procedure LoadFromResourceID(ResID: Integer; IsIniFile: Boolean = False); virtual;
-    *)    
     // properties
     property Progress: Double read GetProgress;
     property ConsecutiveStages: Boolean read GetConsecutiveStages write SetConsecutiveStages;
@@ -635,18 +641,17 @@ type
 
 implementation
 
+uses
+  {$IFDEF Windows}Windows,{$ENDIF} IniFiles,
+  StrRect, BinaryStreaming, UInt64Utils;
+
 {$IFDEF FPC_DisableWarns}
   {$DEFINE FPCDWM}
   {$DEFINE W5024:={$WARN 5024 OFF}} // Parameter "$1" not used
 {$ENDIF}
 
 {===============================================================================
---------------------------------------------------------------------------------
-                               TProgressStageNode                               
---------------------------------------------------------------------------------
-===============================================================================}
-{===============================================================================
-    TProgressStageNode - auxiliary functions
+    Auxiliary functions
 ===============================================================================}
 
 Function LimitValue(Value: Double): Double;
@@ -659,6 +664,32 @@ else
   Result := Value;
 end;
 
+//------------------------------------------------------------------------------
+
+procedure InitFormatSettings(out FormatSettings: TFormatSettings);
+begin
+{$WARN SYMBOL_PLATFORM OFF}
+{$IF not Defined(FPC) and (CompilerVersion >= 18)}
+// Delphi 2006+
+FormatSettings := TFormatSettings.Create(LOCALE_USER_DEFAULT);
+{$ELSE}
+// older delphi and FPC
+{$IFDEF Windows}
+// windows
+GetLocaleFormatSettings(LOCALE_USER_DEFAULT,FormatSettings);
+{$ELSE}
+// non-windows
+FormatSettings := DefaultFormatSettings;
+{$ENDIF}
+{$IFEND}
+{$WARN SYMBOL_PLATFORM ON}
+end;
+
+{===============================================================================
+--------------------------------------------------------------------------------
+                               TProgressStageNode                               
+--------------------------------------------------------------------------------
+===============================================================================}
 {===============================================================================
     TProgressStageNode - class implementation
 ===============================================================================}
@@ -2267,8 +2298,8 @@ end;
 
 procedure TProgressTracker.StageTree(Tree: TStrings; TreeSettings: TPTTreeSettings);
 {
-  Output is necessary because the Tree might nog have Objects property (which
-  is needed) implemented.
+  Output is necessary because the Tree might not have Objects property (which
+  is needed here) properly implemented.
 }
 var
   Output: TStringList;
@@ -2335,7 +2366,7 @@ try
               If tsfProgress in TreeSettings.ShownFields then
                 Line := Format('%s   Progress',[Line]);
               If tsfMaximum in TreeSettings.ShownFields then
-                Line := Format('%s   Maximum   ',[Line]);
+                Line := Format('%s     Maximum   ',[Line]);
               If tsfPosition in TreeSettings.ShownFields then
                 Line := Format('%s   Position',[Line]);
               Output.Insert(0,Line);
@@ -2354,7 +2385,7 @@ try
               If tsfRelativeLen in TreeSettings.ShownFields then
                 Line := Format('%s   %-10.4f',[Line,Info.RelativeLength]);
               If tsfProgress in TreeSettings.ShownFields then
-                Line := Format('%s   %-8.4f',[Line,TProgressStageNode(Output.Objects[i]).Progress]);
+                Line := Format('%s   %-10.4f',[Line,TProgressStageNode(Output.Objects[i]).Progress]);
               If tsfMaximum in TreeSettings.ShownFields then
                 Line := Format('%s   %-10d',[Line,TProgressStageNode(Output.Objects[i]).Maximum]);
               If tsfPosition in TreeSettings.ShownFields then
@@ -2455,6 +2486,215 @@ If StageReporting then
   Node.OnProgress := OnStageProgressHandler
 else
   Node.OnProgress := nil;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.SaveToIniStream(Stream: TStream);
+begin
+// implementation requires IniFileEx which is not available atm.
+raise Exception.Create('TProgressTracker.SaveToIniStream: This method is not implemented yet.');
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.LoadFromIniStream(Stream: TStream);
+begin
+raise Exception.Create('TProgressTracker.LoadFromIniStream: This method is not implemented yet.');
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.SaveToIniFile(const FileName: String);
+var
+  Ini:            TIniFile;
+  FormatSettings: TFormatSettings;
+
+  procedure WriteNode(Node: TProgressStageNode; const Section: String; OnlySubNodes: Boolean = False);
+  var
+    i:  Integer;
+  begin
+    If not OnlySubNodes then
+      begin
+        Ini.WriteInteger(Section,'ID',Integer(Node.ID));
+        Ini.WriteString(Section,'AbsoluteLength',Format('%g',[Node.StageData.AbsoluteLength],FormatSettings));
+        Ini.WriteString(Section,'Maximum',UInt64ToStr(Node.Maximum));
+      end;
+    Ini.WriteInteger(Section,'Count',Node.Count);
+    For i := Node.LowIndex to Node.HighIndex do
+      begin
+        Ini.WriteString(Section,Format('SubNode[%d]',[i]),Node[i].InstanceString);
+        WriteNode(Node[i],Node[i].InstanceString);
+      end;
+  end;
+
+begin
+Ini := TIniFile.Create(StrToRTL(FileName));
+try
+  InitFormatSettings(FormatSettings);
+  FormatSettings.ThousandSeparator := #0;
+  FormatSettings.DecimalSeparator := '.';
+  WriteNode(fMasterNode,'Master',True);
+finally
+  Ini.Free;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.LoadFromIniFile(const FileName: String);
+var
+  Ini:            TIniFile;
+  FormatSettings: TFormatSettings;
+
+  procedure ReadNode(Node: TProgressStageNode; const Section: String);
+  var
+    i:              Integer;
+    NodeSection:    String;
+    NewNodeID:      TPTStageID;
+  begin
+    For i := 0 to Pred(Ini.ReadInteger(Section,'Count',0)) do
+      begin
+        NodeSection := Ini.ReadString(Section,Format('SubNode[%d]',[i]),'');
+        If Ini.SectionExists(NodeSection) then
+          begin
+            NewNodeID := AddIn(Node.ID,
+              StrToFloatDef(Ini.ReadString(NodeSection,'AbsoluteLength','0'),0.0,FormatSettings),
+              TPTStageID(Ini.ReadInteger(NodeSection,'ID',-1)));
+            SetStageMaximum(NewNodeID,StrToUInt64(Ini.ReadString(NodeSection,'Maximum','0')));
+            ReadNode(StageNodes[NewNodeID],NodeSection);
+          end;
+      end;
+  end;
+
+begin
+BeginUpdate;
+try
+  Ini := TIniFile.Create(StrToRTL(FileName));
+  try
+    InitFormatSettings(FormatSettings);
+    FormatSettings.ThousandSeparator := #0;
+    FormatSettings.DecimalSeparator := '.';
+    ReadNode(fMasterNode,'Master');
+  finally
+    Ini.Free;
+  end;
+finally
+  EndUpdate;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.SaveToStream(Stream: TStream);
+
+  procedure WriteNode(Node: TProgressStageNode; OnlySubNodes: Boolean = False);
+  var
+    i:  Integer;
+  begin
+    If not OnlySubNodes then
+      begin
+        Stream_WriteInt32(Stream,Int32(Node.ID));
+        Stream_WriteFloat64(Stream,Node.StageData.AbsoluteLength);
+        Stream_WriteUInt64(Stream,Node.Maximum);
+      end;
+    Stream_WriteInt32(Stream,Node.Count);
+    For i := Node.LowIndex to Node.HighIndex do
+      WriteNode(Node[i]);
+  end;
+
+begin
+WriteNode(fMasterNode,True);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.LoadFromStream(Stream: TStream);
+
+  procedure ReadNode(Node: TProgressStageNode);
+  var
+    i:              Integer;
+    NewNodeID:      TPTStageID;
+    NewNodeAbsLen:  Double;
+  begin
+    For i := 1 to Stream_ReadInt32(Stream) do
+      begin
+        NewNodeID := TPTStageID(Stream_ReadInt32(Stream));
+        NewNodeAbsLen := Stream_ReadFloat64(Stream);
+        NewNodeID := AddIn(Node.ID,NewNodeAbsLen,NewNodeID);
+        SetStageMaximum(NewNodeID,Stream_ReadUInt64(Stream));
+        ReadNode(StageNodes[NewNodeID]);
+      end;
+  end;
+
+begin
+BeginUpdate;
+try
+  Clear;
+  ReadNode(fMasterNode);  
+finally
+  EndUpdate;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.SaveToFile(const FileName: String);
+var
+  FileStream: TFileStream;
+begin
+FileStream := TFileStream.Create(StrToRTL(FileName),fmCreate or fmShareDenyWrite);
+try
+  FileStream.Seek(0,soBeginning);
+  SaveToStream(FileStream);
+finally
+  FileStream.Free;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.LoadFromFile(const FileName: String);
+var
+  FileStream: TFileStream;
+begin
+FileStream := TFileStream.Create(StrToRTL(FileName),fmOpenRead or fmShareDenyWrite);
+try
+  FileStream.Seek(0,soBeginning);
+  LoadFromStream(FileStream);
+finally
+  FileStream.Free;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.LoadFromResource(const ResName: String; IsIniFile: Boolean = False);
+var
+  ResStream:  TResourceStream;
+begin
+ResStream := TResourceStream.Create(hInstance,StrToRTL(ResName),PChar(10){RT_RCDATA});
+try
+  ResStream.Seek(0,soBeginning);
+  LoadFromStream(ResStream);
+finally
+  ResStream.Free;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TProgressTracker.LoadFromResourceID(ResID: Integer; IsIniFile: Boolean = False);
+var
+  ResStream:  TResourceStream;
+begin
+ResStream := TResourceStream.CreateFromID(hInstance,ResID,PChar(10){RT_RCDATA});
+try
+  ResStream.Seek(0,soBeginning);
+  LoadFromStream(ResStream);
+finally
+  ResStream.Free;
+end;
 end;
 
 end.
