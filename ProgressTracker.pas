@@ -9,13 +9,65 @@
 
   Progress tracker
 
-  ©František Milt 2018-10-22
+    Progress tracker is a library meant for calculation and tracking of
+    progress of complex multi-level and multi-stage operations.
 
-  Version 1.3.4
+    Two classes are implemented for this purpose - TProgressStageNode and
+    TProgressTracker. Class TProgressStageNode is used internally in
+    TProgressTracker, but it can be used separately as a standalone solution.
+
+    Individual phases of complex progress are called stages in this library.
+    They are organized into a tree with arbitrary number of branches and levels.
+    Each stage can contain multiple substages or none at all (such stage is
+    called simple stage). If a stage contain substages, then this stage is
+    called a superstage in relation to those substages. Lets consider following
+    stage tree:
+
+        Stage_A --- Stage_A_1
+                 |- Stage_A_2 --- Stage_A_2_I
+                 |             |- Stage_A_2_II
+                 |- Stage_A_3
+
+    In this example, stage A is a superstage for stages A_1, A_2 and A_3. These
+    three stages are a substages of stage A. Stage A_2 is a superstage of stages
+    A_2_I and A_2_II, and these stages are in turn substages of stage A_2.
+
+    Only in simple stages (those with no substage) can the progress or position
+    be directly altered. Change in any simple stage is propagated up the tree
+    and all superstages up to the root stage change their progress accordingly.
+    Each stage can have different length within its superstage. This relative
+    length is calculated from absolute length each stage is given when added.
+
+    For example, if we want to have three stages, first taking 1/2 of the length
+    and other two each 1/4, we can achieve so when defining absolute length of
+    the first stage as 2 and as 1 for the other two.
+
+  Version 2.0 (2020-07-07)
+
+  Last change 2020-07-07
+
+  ©2017-2020 František Milt
+
+  Contacts:
+    František Milt: frantisek.milt@gmail.com
+
+  Support:
+    If you find this code useful, please consider supporting its author(s) by
+    making a small donation using the following link(s):
+
+      https://www.paypal.me/FMilt
+
+  Changelog:
+    For detailed changelog and history please refer to this git repository:
+
+      github.com/TheLazyTomcat/Lib.ProgressTracker
 
   Dependencies:
-    AuxTypes   - github.com/ncs-sniper/Lib.AuxTypes
-    AuxClasses - github.com/ncs-sniper/Lib.AuxClasses
+    AuxTypes        - github.com/TheLazyTomcat/Lib.AuxTypes
+    AuxClasses      - github.com/TheLazyTomcat/Lib.AuxClasses
+    StrRect         - github.com/TheLazyTomcat/Lib.StrRect
+    BinaryStreaming - github.com/TheLazyTomcat/Lib.BinaryStreaming
+    UInt64Utils     - github.com/TheLazyTomcat/Lib.UInt64Utils
 
 ===============================================================================}
 unit ProgressTracker;
@@ -647,8 +699,7 @@ uses
 
 {$IFDEF FPC_DisableWarns}
   {$DEFINE FPCDWM}
-  {$DEFINE W5024:={$WARN 5024 OFF}} // Parameter "$1" not used
-
+  {$DEFINE W5024:={$WARN 5024 OFF}} // Parameter "$1" not used   
   {$PUSH}{$WARN 2005 OFF} // Comment level $1 found
   {$IF Defined(FPC) and (FPC_FULLVERSION >= 30000)}
     {$DEFINE W5058:=}
