@@ -167,8 +167,8 @@ type
     Function Find(SubStage: TPTStageID; out Index: Integer): Boolean; overload; virtual;
     Function Add(AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID): Integer; virtual;
     procedure Insert(Index: Integer; AbsoluteLength: Double; ID: TPTStageID = PT_STAGEID_INVALID); virtual;
-    procedure Move(SrcIdx, DstIdx: Integer); virtual;
     procedure Exchange(Idx1, Idx2: Integer); virtual;
+    procedure Move(SrcIdx, DstIdx: Integer); virtual;
     Function Extract(Node: TProgressStageNode): TProgressStageNode; overload; virtual;
     Function Extract(SubStage: TPTStageID): TProgressStageNode; overload; virtual;
     Function Remove(Node: TProgressStageNode): Integer; overload; virtual;
@@ -648,6 +648,15 @@ uses
 {$IFDEF FPC_DisableWarns}
   {$DEFINE FPCDWM}
   {$DEFINE W5024:={$WARN 5024 OFF}} // Parameter "$1" not used
+
+  {$PUSH}{$WARN 2005 OFF} // Comment level $1 found
+  {$IF Defined(FPC) and (FPC_FULLVERSION >= 30000)}
+    {$DEFINE W5058:=}
+    {$DEFINE W5092:={$WARN 5092 OFF}} // Variable "$1" of a managed type does not seem to be initialized
+  {$ELSE}
+    {$DEFINE W5058:={$WARN 5058 OFF}} // Variable "$1" does not seem to be initialized
+    {$DEFINE W5092:=}
+  {$IFEND}
 {$ENDIF}
 
 {===============================================================================
@@ -666,6 +675,7 @@ end;
 
 //------------------------------------------------------------------------------
 
+{$IFDEF FPCDWM}{$PUSH}W5058 W5092{$ENDIF}
 procedure InitFormatSettings(out FormatSettings: TFormatSettings);
 begin
 {$WARN SYMBOL_PLATFORM OFF}
@@ -684,6 +694,7 @@ FormatSettings := DefaultFormatSettings;
 {$IFEND}
 {$WARN SYMBOL_PLATFORM ON}
 end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 {===============================================================================
 --------------------------------------------------------------------------------
@@ -1201,6 +1212,27 @@ end;
 
 //------------------------------------------------------------------------------
 
+procedure TProgressStageNode.Exchange(Idx1, Idx2: Integer);
+var
+  Temp: TProgressStageNode;
+begin
+If Idx1 <> Idx2 then
+  begin
+    If not CheckIndex(Idx1) then
+      raise EPTIndexOutOfBounds.CreateFmt('TProgressStageNode.Exchange: Index 1 (%d) out of bounds.',[Idx1]);
+    If not CheckIndex(Idx2) then
+      raise EPTIndexOutOfBounds.CreateFmt('TProgressStageNode.Exchange: Index 2 (%d) out of bounds.',[Idx2]);
+    Temp := fSubStages[Idx1];
+    fSubStages[Idx1] := fSubStages[Idx2];
+    fSubStages[Idx2] := Temp;
+    RecalculateRelations;
+    RecalculateProgress(True);
+    DoProgress;
+  end;
+end;
+
+//------------------------------------------------------------------------------
+
 procedure TProgressStageNode.Move(SrcIdx, DstIdx: Integer);
 var
   Temp: TProgressStageNode;
@@ -1220,27 +1252,6 @@ If SrcIdx <> DstIdx then
       For i := SrcIdx downto Succ(DstIdx) do
         fSubStages[i] := fSubStages[i - 1];
     fSubStages[DstIdx] := Temp;
-    RecalculateRelations;
-    RecalculateProgress(True);
-    DoProgress;
-  end;
-end;
-
-//------------------------------------------------------------------------------
-
-procedure TProgressStageNode.Exchange(Idx1, Idx2: Integer);
-var
-  Temp: TProgressStageNode;
-begin
-If Idx1 <> Idx2 then
-  begin
-    If not CheckIndex(Idx1) then
-      raise EPTIndexOutOfBounds.CreateFmt('TProgressStageNode.Move: Index 1 (%d) out of bounds.',[Idx1]);
-    If not CheckIndex(Idx2) then
-      raise EPTIndexOutOfBounds.CreateFmt('TProgressStageNode.Move: Index 2 (%d) out of bounds.',[Idx2]);
-    Temp := fSubStages[Idx1];
-    fSubStages[Idx1] := fSubStages[Idx2];
-    fSubStages[Idx2] := Temp;
     RecalculateRelations;
     RecalculateProgress(True);
     DoProgress;
@@ -1601,13 +1612,16 @@ end;
 
 //------------------------------------------------------------------------------
 
+{$IFDEF FPCDWM}{$PUSH}W5024{$ENDIF}
 procedure TProgressTracker.SetCount(Value: Integer);
 begin
 // do nothing
 end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
+{$IFDEF FPCDWM}{$PUSH}W5024{$ENDIF}
 procedure TProgressTracker.OnMasterProgressHandler(Sender: TObject; Progress: Double);
 begin
 If Assigned(fOnProgressEvent) then
@@ -1615,6 +1629,7 @@ If Assigned(fOnProgressEvent) then
 If Assigned(fOnProgressCallback) then
   fOnProgressCallback(Self,Progress);
 end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
@@ -1725,7 +1740,7 @@ finally
   SuperStageNode.EndUpdate;
 end;
 end;
- 
+
 //------------------------------------------------------------------------------
 
 procedure TProgressTracker.InternalDelete(SuperStageNode: TProgressStageNode; Index: Integer);
@@ -2490,18 +2505,22 @@ end;
 
 //------------------------------------------------------------------------------
 
+{$IFDEF FPCDWM}{$PUSH}W5024{$ENDIF}
 procedure TProgressTracker.SaveToIniStream(Stream: TStream);
 begin
 // implementation requires IniFileEx which is not available atm.
 raise Exception.Create('TProgressTracker.SaveToIniStream: This method is not implemented yet.');
 end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
+{$IFDEF FPCDWM}{$PUSH}W5024{$ENDIF}
 procedure TProgressTracker.LoadFromIniStream(Stream: TStream);
 begin
 raise Exception.Create('TProgressTracker.LoadFromIniStream: This method is not implemented yet.');
 end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
@@ -2676,7 +2695,10 @@ begin
 ResStream := TResourceStream.Create(hInstance,StrToRTL(ResName),PChar(10){RT_RCDATA});
 try
   ResStream.Seek(0,soBeginning);
-  LoadFromStream(ResStream);
+  If IsIniFile then
+    LoadFromIniStream(ResStream)
+  else
+    LoadFromStream(ResStream);
 finally
   ResStream.Free;
 end;
@@ -2691,7 +2713,10 @@ begin
 ResStream := TResourceStream.CreateFromID(hInstance,ResID,PChar(10){RT_RCDATA});
 try
   ResStream.Seek(0,soBeginning);
-  LoadFromStream(ResStream);
+  If IsIniFile then
+    LoadFromIniStream(ResStream)
+  else
+    LoadFromStream(ResStream);
 finally
   ResStream.Free;
 end;
