@@ -42,9 +42,9 @@
     and other two each 1/4, we can achieve so when defining absolute length of
     the first stage as 2 and as 1 for the other two.
 
-  Version 2.0 (2020-07-07)
+  Version 2.0.1 (2020-07-27)
 
-  Last change 2020-07-07
+  Last change 2020-07-27
 
   ©2017-2020 František Milt
 
@@ -906,8 +906,11 @@ If Value >= 0 then
     If Value <> Length(fSubStages) then
       begin
         If Value < Count then
-          For i := Value to HighIndex do
-            FreeAndNil(fSubStages[i]);
+          begin
+            For i := Value to HighIndex do
+              FreeAndNil(fSubStages[i]);
+            fSubStageCount := Value;
+          end;
         SetLength(fSubStages,Value);
       end;
   end
