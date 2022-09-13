@@ -44,9 +44,9 @@
 
   Version 2.0.1 (2020-07-27)
 
-  Last change 2020-08-02
+  Last change 2022-09-13
 
-  ©2017-2020 František Milt
+  ©2017-2022 František Milt
 
   Contacts:
     František Milt: frantisek.milt@gmail.com
@@ -96,7 +96,6 @@ uses
 {===============================================================================
     Library-specific exeptions
 ===============================================================================}
-
 type
   EPTException = class(Exception);
 
@@ -139,7 +138,7 @@ const
 ===============================================================================}
 type
   TProgressStageNode = class(TCustomListObject)
-  private
+  protected
     // progress
     fMaximum:                     UInt64;
     fPosition:                    UInt64;
@@ -170,15 +169,14 @@ type
     fOnSubStageProgressEvent:     TPTStageProgressEvent;
     fOnSubStageProgressCallBack:  TPTStageProgressCallback;
     // getters, setters
-    procedure SetMaximum(Value: UInt64);
-    procedure SetPosition(Value: UInt64);
-    procedure SetProgress(Value: Double);
-    Function GetSubStage(Index: Integer): TProgressStageNode;
-    procedure SetConsecutiveStages(Value: Boolean);
-    procedure SetStrictlyGrowing(Value: Boolean);
-    procedure SetMinProgressDelta(Value: Double);
-    procedure SetGlobalSettings(Value: Boolean);
-  protected
+    procedure SetMaximum(Value: UInt64); virtual;
+    procedure SetPosition(Value: UInt64); virtual;
+    procedure SetProgress(Value: Double); virtual;
+    Function GetSubStage(Index: Integer): TProgressStageNode; virtual;
+    procedure SetConsecutiveStages(Value: Boolean); virtual;
+    procedure SetStrictlyGrowing(Value: Boolean); virtual;
+    procedure SetMinProgressDelta(Value: Double); virtual;
+    procedure SetGlobalSettings(Value: Boolean); virtual;
     // list methods
     Function GetCapacity: Integer; override;
     procedure SetCapacity(Value: Integer); override;
@@ -302,7 +300,7 @@ const
 ===============================================================================}
 type
   TProgressTracker = class(TCustomListObject)
-  private
+  protected
     fMasterNode:              TProgressStageNode;
     fStages:                  array of TProgressStageNode;
     fStageCount:              Integer;
@@ -312,23 +310,22 @@ type
     fOnStageProgressEvent:    TPTStageProgressEvent;
     fOnStageProgressCallBack: TPTStageProgressCallback;
     // getters, setters
-    Function GetProgress: Double;
-    Function GetConsecutiveStages: Boolean;
-    procedure SetConsecutiveStages(Value: Boolean);
-    Function GetStrictlyGrowing: Boolean;
-    procedure SetStrictlyGrowing(Value: Boolean);
-    Function GetMinProgressDelta: Double;
-    procedure SetMinProgressDelta(Value: Double);
-    Function GetGlobalSettings: Boolean;
-    procedure SetGlobalSettings(Value: Boolean);
-    Function GetNode(Index: Integer): TProgressStageNode;
-    Function GetStageNode(Stage: TPTStageID): TProgressStageNode;
-    Function GetStage(Stage: TPTStageID): Double;
-    procedure SetStage(Stage: TPTStageID; Value: Double);
-    Function GetSubStageCount(Stage: TPTStageID): Integer;
-    Function GetSubStageNode(Stage: TPTStageID; Index: Integer): TProgressStageNode;
-    Function GetSubStage(Stage: TPTStageID; Index: Integer): TPTStageID;
-  protected
+    Function GetProgress: Double; virtual;
+    Function GetConsecutiveStages: Boolean; virtual;
+    procedure SetConsecutiveStages(Value: Boolean); virtual;
+    Function GetStrictlyGrowing: Boolean; virtual;
+    procedure SetStrictlyGrowing(Value: Boolean); virtual;
+    Function GetMinProgressDelta: Double; virtual;
+    procedure SetMinProgressDelta(Value: Double); virtual;
+    Function GetGlobalSettings: Boolean; virtual;
+    procedure SetGlobalSettings(Value: Boolean); virtual;
+    Function GetNode(Index: Integer): TProgressStageNode; virtual;
+    Function GetStageNode(Stage: TPTStageID): TProgressStageNode; virtual;
+    Function GetStage(Stage: TPTStageID): Double; virtual;
+    procedure SetStage(Stage: TPTStageID; Value: Double); virtual;
+    Function GetSubStageCount(Stage: TPTStageID): Integer; virtual;
+    Function GetSubStageNode(Stage: TPTStageID; Index: Integer): TProgressStageNode; virtual;
+    Function GetSubStage(Stage: TPTStageID; Index: Integer): TPTStageID; virtual;
     // list methods
     Function GetCapacity: Integer; override;
     procedure SetCapacity(Value: Integer); override;
@@ -757,7 +754,7 @@ end;
     TProgressStageNode - class implementation
 ===============================================================================}
 {-------------------------------------------------------------------------------
-    TProgressStageNode - private methods
+    TProgressStageNode - protected methods
 -------------------------------------------------------------------------------}
 
 procedure TProgressStageNode.SetMaximum(Value: UInt64);
@@ -887,9 +884,7 @@ If Value <> fGlobalSettings then
   end;
 end;
 
-{-------------------------------------------------------------------------------
-    TProgressStageNode - protected methods
--------------------------------------------------------------------------------}
+//------------------------------------------------------------------------------
 
 Function TProgressStageNode.GetCapacity: Integer;
 begin
@@ -1004,8 +999,13 @@ end;
 procedure TProgressStageNode.SubStageProgressHandler(Sender: TObject);
 begin
 RecalculateProgress;
-If (Sender is TProgressStageNode) and Assigned(fOnSubStageProgressEvent) then
-  fOnSubStageProgressEvent(Self,TProgressStageNode(Sender).ID,TProgressStageNode(Sender).Progress);
+If (Sender is TProgressStageNode) then
+  begin
+    If Assigned(fOnSubStageProgressEvent) then
+      fOnSubStageProgressEvent(Self,TProgressStageNode(Sender).ID,TProgressStageNode(Sender).Progress)
+    else If Assigned(fOnSubStageProgressCallback) then
+      fOnSubStageProgressCallback(Self,TProgressStageNode(Sender).ID,TProgressStageNode(Sender).Progress)
+  end;
 DoProgress;  
 end;
 
@@ -1020,8 +1020,8 @@ If (Abs(fProgress - fLastReportedProgress) >= fMinProgressDelta) or
     If (fUpdateCounter <= 0) then
       begin
         If Assigned(fOnProgressEvent) then
-          fOnProgressEvent(Self,fProgress);
-        If Assigned(fOnProgressCallback) then
+          fOnProgressEvent(Self,fProgress)
+        else If Assigned(fOnProgressCallback) then
           fOnProgressCallback(Self,fProgress);
         // put internal at the end of reporting  
         If Assigned(fOnProgressInternal) then
@@ -1499,7 +1499,7 @@ end;
     TProgressTracker - class implementation
 ===============================================================================}
 {-------------------------------------------------------------------------------
-    TProgressTracker - private methods
+    TProgressTracker - protected methods
 -------------------------------------------------------------------------------}
 
 Function TProgressTracker.GetProgress: Double;
@@ -1627,9 +1627,7 @@ begin
 Result := GetSubStageNode(Stage,Index).ID;
 end;
 
-{-------------------------------------------------------------------------------
-    TProgressTracker - protected methods
--------------------------------------------------------------------------------}
+//------------------------------------------------------------------------------
 
 Function TProgressTracker.GetCapacity: Integer;
 begin
@@ -1680,8 +1678,8 @@ end;
 procedure TProgressTracker.OnMasterProgressHandler(Sender: TObject; Progress: Double);
 begin
 If Assigned(fOnProgressEvent) then
-  fOnProgressEvent(Self,Progress);
-If Assigned(fOnProgressCallback) then
+  fOnProgressEvent(Self,Progress)
+else If Assigned(fOnProgressCallback) then
   fOnProgressCallback(Self,Progress);
 end;
 {$IFDEF FPCDWM}{$POP}{$ENDIF}
@@ -1693,8 +1691,8 @@ begin
 If Sender is TProgressStageNode then
   begin
     If Assigned(fOnStageProgressEvent) then
-      fOnStageProgressEvent(Self,TProgressStageNode(Sender).ID,Progress);
-    If Assigned(fOnStageProgressCallback) then
+      fOnStageProgressEvent(Self,TProgressStageNode(Sender).ID,Progress)
+    else If Assigned(fOnStageProgressCallback) then
       fOnStageProgressCallback(Self,TProgressStageNode(Sender).ID,Progress);
   end;
 end;
