@@ -44,7 +44,7 @@
 
   Version 2.0.1 (2020-07-27)
 
-  Last change 2022-09-13
+  Last change 2022-09-20
 
   ©2017-2022 František Milt
 
@@ -706,6 +706,7 @@ uses
     {$DEFINE W5058:={$WARN 5058 OFF}} // Variable "$1" does not seem to be initialized
     {$DEFINE W5092:=}
   {$IFEND}
+  {$POP}
 {$ENDIF}
 
 {===============================================================================
