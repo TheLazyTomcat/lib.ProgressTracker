@@ -44,7 +44,7 @@
 
   Version 2.0.1 (2020-07-27)
 
-  Last change 2022-09-20
+  Last change 2022-09-24
 
   ©2017-2022 František Milt
 
@@ -81,7 +81,9 @@ unit ProgressTracker;
 {$IFEND}
 
 {$IFDEF FPC}
-  {$MODE Delphi}
+  {$MODE ObjFPC}
+  {$MODESWITCH ClassicProcVars+}
+  {$MODESWITCH DuplicateLocals+}
   {$DEFINE FPC_DisableWarns}
   {$MACRO ON}
 {$ENDIF}
